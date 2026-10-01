@@ -1,5 +1,7 @@
-import { redirect } from 'next/navigation';
+'use client';
+
+import AuthGatewayPage from './admin/login/page';
 
 export default function AdminRootPage() {
-  redirect('/admin/login');
+  return <AuthGatewayPage />;
 }
