@@ -14,8 +14,8 @@ import {
 
 export default function SuperAdminLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('superadmin@platform.com');
-  const [password, setPassword] = useState('••••••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -23,7 +23,7 @@ export default function SuperAdminLoginPage() {
     setLoading(true);
     setTimeout(() => {
       setLoading(false);
-      router.push('/admin/dashboard');
+      router.push('/admin');
     }, 250);
   };
 
@@ -53,6 +53,7 @@ export default function SuperAdminLoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="input-field pl-10"
+                  placeholder="admin@platform.com"
                 />
               </div>
             </div>
@@ -74,6 +75,7 @@ export default function SuperAdminLoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="input-field pl-10"
+                  placeholder="••••••••••••"
                 />
               </div>
             </div>
@@ -94,25 +96,6 @@ export default function SuperAdminLoginPage() {
             <p className="leading-relaxed">
               <strong className="text-heading">Security Notice:</strong> Restricted to authorized SaaS platform administrators. All activities are recorded in the immutable audit log.
             </p>
-          </div>
-        </div>
-
-        {/* Link back to Restaurant User Portal */}
-        <div className="mt-6 text-center text-xs text-muted space-y-2">
-          <p className="font-medium text-heading">Looking for the Restaurant App / Account Creation?</p>
-          <div className="flex flex-col space-y-2">
-            <a
-              href="http://localhost:3000/register"
-              className="px-3 py-2 rounded-lg bg-surface border border-border text-primary font-semibold hover:bg-surfaceMuted transition flex items-center justify-center space-x-1.5"
-            >
-              <span>📝 Create Account / Register (Localhost:3000)</span>
-            </a>
-            <a
-              href="http://localhost:3000/login"
-              className="text-secondary font-medium hover:text-heading transition inline-flex items-center justify-center space-x-1"
-            >
-              <span>🔑 Restaurant User Login (Localhost:3000)</span>
-            </a>
           </div>
         </div>
       </div>

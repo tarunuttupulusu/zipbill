@@ -51,9 +51,9 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Root entry point strictly redirects to login page
+  // Root entry point opens the account creation page (Image 1)
   if (pathname === '/') {
-    return NextResponse.redirect(new URL('/login', req.url));
+    return NextResponse.redirect(new URL('/register', req.url));
   }
 
   const segments = pathname.split('/').filter(Boolean);

@@ -84,8 +84,8 @@ export default function AdminLoginPage() {
         isSuperAdmin: true,
       });
 
-      // Redirect directly to /admin/dashboard
-      router.push(data.redirect || '/admin/dashboard');
+      // Redirect directly to /admin
+      router.push('/admin');
     } catch (err: any) {
       setErrorMessage(
         err?.message || 'Unable to connect to the Admin Control Plane. Please try again.'
@@ -203,27 +203,6 @@ export default function AdminLoginPage() {
         </div>
       </div>
 
-      {/* DUAL PORTAL SWITCHER: CLEAN LINKS WITHOUT LOCALHOST */}
-      <div className="mt-8 text-center space-y-3 max-w-md w-full">
-        <p className="text-xs font-medium text-secondary">
-          Looking for the Restaurant App / Account Creation?
-        </p>
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5">
-          <Link
-            href="/register"
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-surface border border-border text-xs font-semibold text-heading hover:bg-surfaceMuted transition inline-flex items-center justify-center space-x-2 shadow-xs"
-          >
-            <span>📝 Create Account / Register</span>
-          </Link>
-
-          <Link
-            href="/login"
-            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-surface border border-border text-xs font-semibold text-secondary hover:text-heading hover:bg-surfaceMuted transition inline-flex items-center justify-center space-x-2 shadow-xs"
-          >
-            <span>🔑 Restaurant User Login</span>
-          </Link>
-        </div>
-      </div>
 
       {/* FORGOT PASSWORD MODAL */}
       {showForgotModal && (

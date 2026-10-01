@@ -9,10 +9,10 @@ export default function RootPage() {
   const { session } = useApp();
 
   useEffect(() => {
-    if (session && session.isAuthenticated) {
+    if (session && session.userId && session.userId !== 'usr-owner-01') {
       router.replace('/dashboard');
     } else {
-      router.replace('/login');
+      router.replace('/register');
     }
   }, [session, router]);
 
