@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const tenantId = searchParams.get('tenantId') || 'tenant-spice-garden';
+    const tenantId = searchParams.get('tenantId');
+    if (!tenantId) {
+      return NextResponse.json({ success: true, expenses: [] });
+    }
 
     const expenses = await prisma.expense.findMany({
       where: { tenantId },

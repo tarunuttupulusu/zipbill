@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. STAGE 3 SECURITY CHECK: Verify that the account is an authorized platform administrator
-    const isPlatformAdmin = user.roleType === 'SUPER_ADMIN' || user.roleType === 'ADMIN';
+    const isPlatformAdmin = user.roleType === 'SUPER_ADMIN';
 
     if (!isPlatformAdmin) {
       return NextResponse.json(

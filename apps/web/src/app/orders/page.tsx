@@ -38,13 +38,13 @@ export default function OrdersManagementPage() {
 
   const ordersList = activeOrders.map((o) => ({
     id: o.id,
-    orderNumber: `ORD-${o.id.substring(0, 6).toUpperCase()}`,
-    tableNumber: o.tableId ? `Table ${o.tableId.substring(0, 4)}` : 'Counter',
-    orderType: o.tableId ? 'Dine-In' : 'Takeaway',
-    workerName: o.workerId || 'Cashier',
+    orderNumber: o.orderNumber || `ORD-${o.id.substring(0, 4).toUpperCase()}`,
+    tableNumber: o.tableName || (o as any).table?.tableName || (o.tableId ? 'Dine-In Table' : 'Takeaway Counter'),
+    orderType: o.orderType || (o.tableId ? 'Dine-In' : 'Takeaway'),
+    workerName: o.createdByWorkerName || (o as any).workerId || 'Cashier',
     status: o.status,
     itemsCount: o.items?.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) || 0,
-    total: o.finalTotal || o.subtotal || 0,
+    total: o.grandTotal || (o as any).finalTotal || o.subtotal || 0,
     timeAgo: new Date(o.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     items: o.items || [],
   }));

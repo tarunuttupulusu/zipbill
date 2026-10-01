@@ -147,70 +147,16 @@ export const SYSTEM_PERMISSIONS: PermissionDefinition[] = [
 ];
 
 // ============================================================
+// ============================================================
 // DEFAULT ROLE PERMISSION MATRIX
-// Per Specification: OWNER, RESTAURANT_ADMIN, MANAGER,
-// CASHIER, WAITER, KITCHEN, ACCOUNTANT
+// Per Specification: STRICT 3-ROLE ARCHITECTURE (OWNER, WAITER, KITCHEN ONLY)
 // ============================================================
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
+  // 1. OWNER: Full management access across all enabled restaurant modules
   OWNER: ['*'],
 
-  RESTAURANT_ADMIN: [
-    'dashboard.*',
-    'pos.*',
-    'tables.*',
-    'orders.*',
-    'kitchen.*',
-    'menu.*',
-    'billing.*',
-    'payments.*',
-    'inventory.*',
-    'customers.*',
-    'staff.*',
-    'expenses.*',
-    'reports.*',
-    'qr.*',
-    'printers.*',
-    'sync.*',
-    'settings.*',
-  ],
-
-  // Manager: Restaurant operations and management.
-  // Restricted by default: Inventory, Expenses, Staff Management, Roles & Permissions, Restaurant Settings, Subscription.
-  MANAGER: [
-    'dashboard.*',
-    'pos.*',
-    'tables.*',
-    'orders.*',
-    'kitchen.*',
-    'menu.*',
-    'billing.*',
-    'payments.*',
-    'customers.*',
-    'reports.*',
-    'staff.activity',
-    'printers.*',
-    'sync.*',
-  ],
-
-  // Cashier: Dashboard, POS, Orders, Billing, Payments, Customers, Offline & Sync.
-  // Hidden: Staff, Roles, Inventory, Expenses, Settings, Reports, Subscription.
-  CASHIER: [
-    'dashboard.view',
-    'dashboard.sales',
-    'dashboard.orders',
-    'pos.*',
-    'orders.view',
-    'orders.details',
-    'menu.view',
-    'billing.*',
-    'payments.*',
-    'customers.view',
-    'sync.*',
-  ],
-
-  // Waiter: Dashboard, POS, Tables, Orders, Menu, Offline & Sync. (Optional: Customers, QR).
-  // Hidden: Billing, Payments, Inventory, Expenses, Staff, Reports, Settings, Printer Management.
+  // 2. WAITER: Customer-facing order operations (Dashboard, POS, Tables, Orders, Menu, Customers)
   WAITER: [
     'dashboard.view',
     'dashboard.tables',
@@ -223,30 +169,14 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
     'orders.details',
     'menu.view',
     'customers.view',
-    'qr.view',
     'sync.*',
   ],
 
-  // Kitchen: Kitchen, Orders, Offline & Sync only.
-  // Hidden: Dashboard, POS, Tables, Billing, Payments, Inventory, Customers, Staff, Expenses, Reports, Settings.
+  // 3. KITCHEN: Kitchen order display and queue preparation (Kitchen, Orders)
   KITCHEN: [
     'kitchen.*',
     'orders.view',
     'orders.details',
-    'sync.*',
-  ],
-
-  // Accountant: Dashboard, Billing, Payments, Expenses, Reports & Analytics, Customers, Offline & Sync.
-  // Hidden: Tables, Kitchen, Staff Management, Menu Management, POS Operations, Roles & Permissions.
-  ACCOUNTANT: [
-    'dashboard.view',
-    'dashboard.sales',
-    'dashboard.payments',
-    'billing.*',
-    'payments.*',
-    'expenses.*',
-    'reports.*',
-    'customers.view',
     'sync.*',
   ],
 };
@@ -476,6 +406,17 @@ export function generateDynamicNavigation(params: NavigationGenerationParams): A
   const generatedSections: ArchitectureSection[] = [];
 
   for (const section of RESTAURANT_PORTAL_SECTIONS) {
+    // STRICT 3-ROLE SIDEBAR RULE:
+    // WAITER: Dashboard, POS, Tables, Orders, Menu, Customers
+    // KITCHEN: Kitchen, Orders
+    // OWNER: All sections
+    if (normalizedRole === 'WAITER' && !['dashboard', 'pos', 'tables', 'orders', 'menu', 'customers'].includes(section.id)) {
+      continue;
+    }
+    if (normalizedRole === 'KITCHEN' && !['kitchen', 'orders'].includes(section.id)) {
+      continue;
+    }
+
     // STEP 8: Filter unavailable modules based on Business Type
     if (businessType === 'CLOUD_KITCHEN' && section.id === 'tables') {
       continue;

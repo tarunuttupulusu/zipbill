@@ -136,7 +136,8 @@ export default function SettingsAndModulesPage() {
               <label className="block text-secondary font-medium mb-1">GSTIN Number</label>
               <input
                 type="text"
-                value={profile.taxNumber || '29AAAAA0000A1Z5'}
+                value={profile.taxNumber || ''}
+                placeholder="Enter 15-digit GSTIN (optional)"
                 onChange={(e) => setProfile({ ...profile, taxNumber: e.target.value })}
                 className="input-field font-mono"
               />

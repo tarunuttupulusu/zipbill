@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export default function ExpensesLedgerPage() {
-  const { expenses, setExpenses, profile } = useApp();
+  const { expenses, setExpenses, profile, session, currentTenant, refreshTenantData } = useApp();
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [category, setCategory] = useState('RAW_MATERIALS');
@@ -28,9 +28,11 @@ export default function ExpensesLedgerPage() {
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount) return;
+    const activeTenantId = profile.tenantId || session.tenantId || currentTenant?.id || '';
+
     const newExpense = {
       id: `exp-${Date.now()}`,
-      tenantId: profile.tenantId,
+      tenantId: activeTenantId,
       category,
       amount: Math.round(Number(amount) * 100),
       paymentMode,
@@ -42,17 +44,20 @@ export default function ExpensesLedgerPage() {
     setExpenses([newExpense, ...expenses]);
 
     try {
-      await fetch('/api/tenant/expenses', {
+      const res = await fetch('/api/tenant/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenantId: profile.tenantId,
+          tenantId: activeTenantId,
           category,
           amount,
           paymentMode,
           notes,
         }),
       });
+      if (res.ok) {
+        refreshTenantData().catch(() => {});
+      }
     } catch {}
 
     setAmount('');

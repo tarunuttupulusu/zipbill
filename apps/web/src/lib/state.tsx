@@ -76,6 +76,14 @@ interface AppContextType {
   setCustomers: React.Dispatch<React.SetStateAction<any[]>>;
   expenses: any[];
   setExpenses: React.Dispatch<React.SetStateAction<any[]>>;
+  staff: any[];
+  setStaff: React.Dispatch<React.SetStateAction<any[]>>;
+  inventory: any[];
+  setInventory: React.Dispatch<React.SetStateAction<any[]>>;
+  currentTenant: { id: string; name: string; slug: string; businessType: string } | null;
+  setCurrentTenant: (t: { id: string; name: string; slug: string; businessType: string } | null) => void;
+  availableTenants: Array<{ id: string; name: string; slug: string; businessType: string }>;
+  setAvailableTenants: (tenants: Array<{ id: string; name: string; slug: string; businessType: string }>) => void;
   stats: {
     totalRevenue: number;
     totalOrders: number;
@@ -90,6 +98,7 @@ interface AppContextType {
   refreshTenantData: () => Promise<void>;
   createOrderOffline: (orderData: Partial<Order>) => Promise<Order>;
   updateTableStatus: (tableId: string, status: FloorTable['status']) => void;
+  updateOrderStatus: (orderId: string, status: Order['status']) => Promise<void>;
   pendingSyncCount: number;
   triggerSync: () => Promise<void>;
   resetToDemo: () => void;
@@ -108,12 +117,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [devicePlatform] = useState<DevicePlatform>('DESKTOP');
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
 
+  const [currentTenant, setCurrentTenant] = useState<{ id: string; name: string; slug: string; businessType: string } | null>(null);
+  const [availableTenants, setAvailableTenants] = useState<Array<{ id: string; name: string; slug: string; businessType: string }>>([]);
+
   const [tables, setTables] = useState<FloorTable[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [staff, setStaff] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalRevenue: 0,
     totalOrders: 0,
@@ -157,29 +171,88 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Dynamic Database Fetcher
   const refreshTenantData = useCallback(async () => {
-    const activeTenantId = profile.tenantId || session.tenantId || 'tenant-spice-garden';
+    let urlSlug = '';
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const querySlug = searchParams.get('restaurantSlug') || searchParams.get('restaurant') || searchParams.get('slug');
+      if (querySlug) {
+        urlSlug = querySlug;
+      } else {
+        const parts = window.location.pathname.split('/').filter(Boolean);
+        const KNOWN = ['dashboard', 'pos', 'tables', 'orders', 'kitchen', 'menu', 'customers', 'billing', 'payments', 'expenses', 'inventory', 'reports', 'staff', 'qr', 'screens', 'printers', 'sync', 'settings', 'subscription', 'leads', 'offline', 'onboarding', 'login', 'register', 'admin', 'auth'];
+        if (parts.length > 0 && !KNOWN.includes(parts[0])) {
+          urlSlug = parts[0];
+        }
+      }
+    }
+
+    const activeTenantId = profile.tenantId || session.tenantId;
+    if (!activeTenantId && !urlSlug) {
+      setTables([]);
+      setCategories([]);
+      setMenuItems([]);
+      setActiveOrders([]);
+      setCustomers([]);
+      setExpenses([]);
+      setStaff([]);
+      setStats({
+        totalRevenue: 0,
+        totalOrders: 0,
+        activeOrders: 0,
+        occupiedTables: 0,
+        totalTables: 0,
+        totalMenuItems: 0,
+        totalCustomers: 0,
+        totalStaff: 0,
+      });
+      return;
+    }
+
     setIsLoadingData(true);
     try {
-      const res = await fetch(`/api/tenant/data?tenantId=${activeTenantId}`);
+      const q = new URLSearchParams();
+      if (activeTenantId) q.set('tenantId', activeTenantId);
+      if (urlSlug) q.set('slug', urlSlug);
+      if (session.email) q.set('email', session.email);
+
+      const res = await fetch(`/api/tenant/data?${q.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.tables) setTables(data.tables);
-        if (data.categories) setCategories(data.categories);
-        if (data.menuItems) setMenuItems(data.menuItems);
-        if (data.orders) setActiveOrders(data.orders);
-        if (data.customers) setCustomers(data.customers);
-        if (data.expenses) setExpenses(data.expenses);
+        setTables(data.tables || []);
+        setCategories(data.categories || []);
+        setMenuItems(data.menuItems || []);
+        setActiveOrders(data.orders || []);
+        setCustomers(data.customers || []);
+        setExpenses(data.expenses || []);
+        if (data.inventory) setInventory(data.inventory);
+        if (data.staff) setStaff(data.staff);
         if (data.stats) setStats(data.stats);
+        if (data.tenant) {
+          setCurrentTenant(data.tenant);
+        }
+        if (data.availableTenants) {
+          setAvailableTenants(data.availableTenants);
+        }
         if (data.profile) {
           setProfileState(data.profile);
         }
+      } else if (res.status === 404) {
+        // Stale tenant in localStorage or URL: reset state to clean
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('saas_active_profile');
+          localStorage.removeItem('saas_active_tenant');
+        }
+        setCurrentTenant(null);
+        setTables([]);
+        setMenuItems([]);
+        setActiveOrders([]);
       }
     } catch (err) {
       console.error('Error loading dynamic database data:', err);
     } finally {
       setIsLoadingData(false);
     }
-  }, [profile.tenantId, session.tenantId]);
+  }, [profile.tenantId, session.tenantId, session.email]);
 
   // Hydrate session & profile on initial browser load
   useEffect(() => {
@@ -250,21 +323,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const updateTableStatus = (tableId: string, status: FloorTable['status']) => {
+  const updateTableStatus = async (tableId: string, status: FloorTable['status']) => {
     setTables((prev) =>
       prev.map((t) => (t.id === tableId ? { ...t, status, updatedAt: new Date().toISOString() } : t))
     );
+    try {
+      await fetch('/api/tenant/tables', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableId, status }),
+      });
+    } catch (err) {
+      console.warn('Failed to sync table status update to cloud:', err);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, status: Order['status']) => {
+    setActiveOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status, updatedAt: new Date().toISOString() } : o))
+    );
+    try {
+      await fetch('/api/tenant/orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, status }),
+      });
+    } catch (err) {
+      console.warn('Failed to sync order status update to cloud:', err);
+    }
   };
 
   // Transactional Offline/Online Order Creation
   const createOrderOffline = async (orderData: Partial<Order>): Promise<Order> => {
+    const activeTenantId = profile.tenantId || session.tenantId || currentTenant?.id || '';
     const orderId = generateUUIDv7();
-    const orderNumber = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderNumber = `ORD-${String(activeOrders.length + 1).padStart(4, '0')}`;
     const now = new Date().toISOString();
 
     const newOrder: Order = {
       id: orderId,
-      tenantId: profile.tenantId,
+      tenantId: activeTenantId,
       orderNumber,
       orderType: orderData.orderType || 'DINE_IN',
       tableId: orderData.tableId,
@@ -295,7 +393,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            tenantId: profile.tenantId,
+            tenantId: activeTenantId,
             orderType: newOrder.orderType,
             tableId: newOrder.tableId,
             tableName: newOrder.tableName,
@@ -319,7 +417,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const idempotencyKey = createIdempotencyKey({
         deviceId: session.deviceId || 'local',
-        tenantId: profile.tenantId,
+        tenantId: activeTenantId,
         entityType: 'ORDER',
         action: 'CREATE',
         localTimestamp: Date.now(),
@@ -327,7 +425,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       await offlineDb.syncQueue.add({
         operationId: generateUUIDv7(),
-        tenantId: profile.tenantId,
+        tenantId: activeTenantId,
         deviceId: session.deviceId || 'local',
         workerId: session.userId,
         entityType: 'ORDER',
@@ -402,11 +500,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCustomers,
         expenses,
         setExpenses,
+        staff,
+        setStaff,
+        inventory,
+        setInventory,
+        currentTenant,
+        setCurrentTenant,
+        availableTenants,
+        setAvailableTenants,
         stats,
         isLoadingData,
         refreshTenantData,
         createOrderOffline,
         updateTableStatus,
+        updateOrderStatus,
         pendingSyncCount,
         triggerSync,
         resetToDemo,

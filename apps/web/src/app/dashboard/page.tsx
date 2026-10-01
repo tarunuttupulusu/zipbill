@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/state';
@@ -44,7 +44,7 @@ const DASHBOARD_TABS = [
   { id: 'actions', name: 'Quick Actions' },
 ];
 
-export default function DashboardPage() {
+function DashboardContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'overview';
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -52,11 +52,7 @@ export default function DashboardPage() {
 
   const {
     profile,
-    businessType,
-    setBusinessType,
-    enabledModules,
-    toggleModule,
-    isOnline,
+    session,
     tables,
     activeOrders,
     stats,
@@ -69,39 +65,6 @@ export default function DashboardPage() {
 
   const currencySymbol = profile.currencySymbol || '₹';
   const totalRevenue = stats?.totalRevenue || (completedOrders.reduce((acc, o) => acc + (o.grandTotal || 0), 0) / 100);
-
-  const businessTypes: Array<{ type: BusinessType; title: string; desc: string; icon: string }> = [
-    {
-      type: 'RESTAURANT',
-      title: 'Full Dine-In Restaurant',
-      desc: 'Tables, Waiters, Kitchen Display, KOT, Split Bills',
-      icon: '🍽️',
-    },
-    {
-      type: 'BAKERY',
-      title: 'Counter Bakery & Patisserie',
-      desc: 'Quick Touch Checkout, Product Inventory, Fresh Bakes',
-      icon: '🥐',
-    },
-    {
-      type: 'CLOUD_KITCHEN',
-      title: 'Delivery Cloud Kitchen',
-      desc: 'Multi-Station KDS, Delivery Dispatch, Pack Timers',
-      icon: '🛵',
-    },
-    {
-      type: 'CAFE',
-      title: 'Artisan Cafe & Bistro',
-      desc: 'Counter Ordering + Seating, Modifiers, Barista KDS',
-      icon: '☕',
-    },
-    {
-      type: 'BAR',
-      title: 'Bar & Lounge',
-      desc: 'Beverage Stations, High-Speed Tab Management, Split Pay',
-      icon: '🍸',
-    },
-  ];
 
   const filteredOrders = activeOrders.filter((o) => {
     if (!searchQuery) return true;
@@ -147,16 +110,28 @@ export default function DashboardPage() {
 
       {/* 4 DYNAMIC STAT CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Today's Revenue */}
-        <div className="stat-card">
-          <div className="text-[14px] text-secondary font-medium">Revenue</div>
-          <div className="text-[28px] font-semibold text-heading mt-2 leading-none">
-            {currencySymbol}{totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        {/* Card 1: Today's Revenue (Protected: Hidden for non-owners to guard sensitive financial data) */}
+        {session.roleName === 'OWNER' ? (
+          <div className="stat-card">
+            <div className="text-[14px] text-secondary font-medium">Revenue</div>
+            <div className="text-[28px] font-semibold text-heading mt-2 leading-none">
+              {currencySymbol}{totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div className="text-[12px] text-success mt-1.5 flex items-center space-x-1 font-medium">
+              <span>Live from Database</span>
+            </div>
           </div>
-          <div className="text-[12px] text-success mt-1.5 flex items-center space-x-1 font-medium">
-            <span>Live from Database</span>
+        ) : (
+          <div className="stat-card">
+            <div className="text-[14px] text-secondary font-medium">Shift Status</div>
+            <div className="text-[28px] font-semibold text-primary mt-2 leading-none">
+              Active
+            </div>
+            <div className="text-[12px] text-muted mt-1.5 font-medium">
+              Floor Terminal Assigned
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Card 2: Active Orders */}
         <div className="stat-card">
@@ -368,51 +343,14 @@ export default function DashboardPage() {
           )}
         </div>
       )}
-
-      {/* DYNAMIC BUSINESS CONFIGURATION SWITCHER */}
-      <div className="card space-y-4">
-        <div>
-          <h2 className="text-[18px] font-semibold text-heading">
-            Business Profile & Dynamic Module Configuration
-          </h2>
-          <p className="text-[14px] text-secondary mt-0.5">
-            Switch business profiles to dynamically regenerate navigation, modules, and operational views.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
-          {businessTypes.map((b) => {
-            const isSelected = businessType === b.type;
-            return (
-              <button
-                key={b.type}
-                type="button"
-                onClick={() => setBusinessType(b.type)}
-                className={`p-4 rounded-[14px] text-left border transition-all duration-150 flex flex-col justify-between ${
-                  isSelected
-                    ? 'bg-primary-light border-primary/80 ring-1 ring-primary/40'
-                    : 'bg-surface border-border hover:bg-surfaceMuted'
-                }`}
-              >
-                <div>
-                  <div className="text-2xl mb-2">{b.icon}</div>
-                  <div className={`font-semibold text-sm ${isSelected ? 'text-primary' : 'text-heading'}`}>
-                    {b.title}
-                  </div>
-                  <p className="text-[11px] text-muted mt-1 leading-snug line-clamp-2">
-                    {b.desc}
-                  </p>
-                </div>
-                <div className="mt-3 pt-2 border-t border-borderLight flex items-center justify-between text-[11px]">
-                  <span className={isSelected ? 'text-primary font-semibold' : 'text-placeholder'}>
-                    {isSelected ? 'Active Configuration' : 'Click to Switch'}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-neutral-400">Loading dashboard...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

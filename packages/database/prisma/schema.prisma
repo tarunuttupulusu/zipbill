@@ -31,16 +31,19 @@ enum RegistrationStatus {
   SUSPENDED
 }
 
+// Platform Super Admin is separate from Restaurant Portal roles
 enum UserRoleType {
-  SUPER_ADMIN
+  SUPER_ADMIN // Platform Administrator (Platform Super Admin only)
+  OWNER       // Restaurant Owner (full management of restaurant)
+  WAITER      // Restaurant Floor & POS Staff
+  KITCHEN     // Restaurant Kitchen & Preparation Staff
+}
+
+// Strict 3-Role Architecture for Restaurant Portal
+enum RestaurantRole {
   OWNER
-  ADMIN
-  MANAGER
-  CASHIER
   WAITER
   KITCHEN
-  ACCOUNTANT
-  CUSTOM
 }
 
 model Tenant {
@@ -56,6 +59,7 @@ model Tenant {
   businessProfile      BusinessProfile?
   registrationRequests RegistrationRequest[]
   users                User[]
+  members              RestaurantMember[]
   roles                Role[]
   modules              TenantModule[]
   settings             RestaurantSetting[]
@@ -129,14 +133,16 @@ model RegistrationRequest {
 }
 
 // ============================================================
-// 2. USERS, ROLES, PERMISSIONS & DEVICES
+// 2. USERS, ROLES, PERMISSIONS & RESTAURANT MEMBERSHIP
+// Source of truth for Authentication is Supabase Auth (auth.users)
 // ============================================================
 
 model User {
   id           String       @id @default(uuid())
   tenantId     String? // Null for Platform Super Admin
+  authUserId   String?      @map("auth_user_id") @db.Uuid // Supabase auth.users UID
   email        String       @unique
-  passwordHash String
+  passwordHash String? // Optional/deprecated: Supabase Auth is source of truth
   fullName     String
   phone        String?
   roleType     UserRoleType @default(WAITER)
@@ -154,6 +160,27 @@ model User {
   auditLogs AuditLog[]
 
   @@index([tenantId])
+  @@index([authUserId])
+}
+
+// Direct restaurant membership mapping Supabase Auth UID to Restaurant
+model RestaurantMember {
+  id        String         @id @default(uuid())
+  tenantId  String
+  userId    String         @db.Uuid // Maps to auth.users.id / Profile.id
+  role      RestaurantRole @default(WAITER)
+  roleId    String?        // Optional custom role
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  profile    Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRole Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
 }
 
 model Session {
@@ -212,16 +239,19 @@ model Role {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  users  User[]
+  tenant  Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users   User[]
+  members RestaurantMember[]
 
   @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
+// Single consolidated module system for restaurant tenants
 model TenantModule {
   id          String   @id @default(uuid())
   tenantId    String
-  moduleToken String
+  moduleToken String   // POS, TABLES, ORDERS, KITCHEN, MENU, BILLING, etc.
   isEnabled   Boolean  @default(true)
   configJson  Json?
   createdAt   DateTime @default(now())
@@ -256,7 +286,6 @@ model Permission {
   createdAt   DateTime @default(now())
 
   rolePermissions RolePermission[]
-  userPermissions UserPermission[]
 }
 
 model RolePermission {
@@ -272,31 +301,6 @@ model RolePermission {
   @@index([roleId])
 }
 
-model UserRole {
-  id        String   @id @default(uuid())
-  userId    String
-  roleId    String
-  tenantId  String
-  createdAt DateTime @default(now())
-
-  @@unique([userId, roleId])
-  @@index([userId])
-  @@index([tenantId])
-}
-
-model UserPermission {
-  id             String   @id @default(uuid())
-  userId         String
-  permissionCode String
-  isGranted      Boolean  @default(true)
-  createdAt      DateTime @default(now())
-
-  permission Permission @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
-
-  @@unique([userId, permissionCode])
-  @@index([userId])
-}
-
 model Module {
   id             String   @id @default(uuid())
   code           String   @unique // e.g. 'pos', 'tables', 'kitchen', 'billing'
@@ -305,46 +309,6 @@ model Module {
   description    String?
   defaultEnabled Boolean  @default(true)
   createdAt      DateTime @default(now())
-}
-
-model RestaurantModule {
-  id          String   @id @default(uuid())
-  tenantId    String
-  moduleCode  String
-  isEnabled   Boolean  @default(true)
-  configJson  Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([tenantId, moduleCode])
-  @@index([tenantId])
-}
-
-model NavigationItem {
-  id                 String   @id @default(uuid())
-  label              String
-  icon               String
-  path               String
-  moduleCode         String
-  requiredPermission String?
-  sortOrder          Int      @default(0)
-  parentId           String?
-  createdAt          DateTime @default(now())
-
-  roleNavigationPermissions RoleNavigationPermission[]
-}
-
-model RoleNavigationPermission {
-  id               String   @id @default(uuid())
-  roleId           String
-  navigationItemId String
-  isVisible        Boolean  @default(true)
-  createdAt        DateTime @default(now())
-
-  navigationItem NavigationItem @relation(fields: [navigationItemId], references: [id], onDelete: Cascade)
-
-  @@unique([roleId, navigationItemId])
-  @@index([roleId])
 }
 
 // ============================================================
@@ -430,7 +394,7 @@ model MenuItem {
   categoryId       String
   name             String
   description      String?
-  basePrice        Int      // in lowest currency unit (cents/paise)
+  basePrice        Int      // in lowest currency unit (paise: ₹1 = 100)
   taxRatePercent   Int      @default(5)
   foodType         FoodType @default(VEG)
   imageUrl         String?
@@ -456,7 +420,7 @@ model MenuVariant {
   id          String   @id @default(uuid())
   menuItemId  String
   name        String   // Half, Full, Regular, Large
-  price       Int      // in lowest currency unit
+  price       Int      // in lowest currency unit (paise: ₹1 = 100)
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
 
@@ -483,7 +447,7 @@ model Modifier {
   id          String   @id @default(uuid())
   groupId     String
   name        String
-  priceDelta  Int      @default(0)
+  priceDelta  Int      @default(0) // in lowest currency unit (paise)
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
 
@@ -556,7 +520,7 @@ model Order {
   customerId          String?
   status              OrderStatus @default(PLACED)
   guestCount          Int         @default(1)
-  subtotal            Int         @default(0) // cents
+  subtotal            Int         @default(0) // in lowest currency unit (paise)
   taxAmount           Int         @default(0)
   discountAmount      Int         @default(0)
   serviceChargeAmount Int         @default(0)
@@ -588,9 +552,9 @@ model OrderItem {
   variantId           String?
   itemName            String
   variantName         String?
-  unitPrice           Int
+  unitPrice           Int         // in paise
   quantity            Int
-  subtotal            Int
+  subtotal            Int         // in paise
   notes               String?
   status              OrderStatus @default(PLACED)
   addedByWorkerId     String
@@ -611,7 +575,7 @@ model OrderItemModifier {
   id             String @id @default(uuid())
   orderItemId    String
   modifierName   String
-  unitPriceDelta Int
+  unitPriceDelta Int    // in paise
 
   orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 }
@@ -676,14 +640,14 @@ model Invoice {
   tenantId            String
   invoiceNumber       String
   orderId             String   @unique
-  subtotal            Int
-  taxAmount           Int
+  subtotal            Int      // in paise
+  taxAmount           Int      // in paise
   taxDetailsJson      Json?
   discountAmount      Int      @default(0)
   discountReason      String?
   serviceChargeAmount Int      @default(0)
   roundOffAmount      Int      @default(0)
-  grandTotal          Int
+  grandTotal          Int      // in paise
   status              String   @default("PAID") // UNPAID, PAID, VOIDED, REFUNDED
   paidAmount          Int      @default(0)
   dueAmount           Int      @default(0)
@@ -704,7 +668,7 @@ model Payment {
   id                   String        @id @default(uuid())
   tenantId             String
   invoiceId            String
-  amount               Int
+  amount               Int           // in paise
   method               PaymentMethod
   status               PaymentStatus @default(COMPLETED)
   transactionReference String?
@@ -729,7 +693,7 @@ model Customer {
   phone       String
   email       String?
   totalVisits Int      @default(0)
-  totalSpend  Int      @default(0)
+  totalSpend  Int      @default(0) // in paise
   lastVisitAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -749,7 +713,7 @@ model InventoryItem {
   unit         String   // kg, g, l, ml, pcs
   currentStock Float    @default(0)
   minAlertStock Float   @default(5)
-  costPerUnit  Int      @default(0)
+  costPerUnit  Int      @default(0) // in paise
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -778,8 +742,8 @@ model InventoryTransaction {
   inventoryItemId String
   type            String   // PURCHASE, CONSUMPTION, SPOILAGE, ADJUSTMENT
   quantity        Float
-  unitCost        Int
-  totalCost       Int
+  unitCost        Int      // in paise
+  totalCost       Int      // in paise
   notes           String?
   createdAt       DateTime @default(now())
 
@@ -805,7 +769,7 @@ model Expense {
   id         String   @id @default(uuid())
   tenantId   String
   category   String
-  amount     Int
+  amount     Int      // in paise
   paymentMode String  @default("CASH")
   notes      String?
   recordedBy String
@@ -874,8 +838,8 @@ model SubscriptionPlan {
   id                 String         @id @default(uuid())
   name               String         @unique // FREE, STARTER, PRO, ENTERPRISE
   description        String
-  monthlyPrice       Int
-  yearlyPrice        Int
+  monthlyPrice       Int            // in paise
+  yearlyPrice        Int            // in paise
   maxTables          Int            @default(10)
   maxStaff           Int            @default(5)
   maxDevices         Int            @default(3)
@@ -901,16 +865,18 @@ model Subscription {
 }
 
 // ============================================================
-// 9. SUPABASE AUTH & ISOLATED USER ENVIRONMENT
+// 9. SUPABASE AUTH & USER PROFILE ISOLATION
 // ============================================================
 
 model Profile {
-  id        String   @id @db.Uuid
+  id        String   @id @db.Uuid // Primary key matching auth.users.id
   fullName  String?  @map("full_name")
   phone     String?
   avatarUrl String?  @map("avatar_url")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships RestaurantMember[]
 
   @@map("profiles")
 }

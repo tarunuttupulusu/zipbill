@@ -63,7 +63,7 @@ export async function authorizeRequest(
     const roleFromHeader = req.headers.get('x-user-role') || 'OWNER';
     context = {
       userId: req.headers.get('x-user-id') || 'usr-default',
-      tenantId: tenantHeader || 'tenant-spice-garden',
+      tenantId: tenantHeader || '',
       role: roleFromHeader,
       permissions: ROLE_DEFAULT_PERMISSIONS[roleFromHeader] || ['*'],
     };

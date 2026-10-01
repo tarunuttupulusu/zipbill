@@ -27,24 +27,24 @@ interface KdsTicket {
 }
 
 export default function KitchenKdsPage() {
-  const { activeOrders } = useApp();
+  const { activeOrders, updateOrderStatus } = useApp();
 
   const [selectedStation, setSelectedStation] = useState<string>('ALL');
   const [ticketOverrides, setTicketOverrides] = useState<Record<string, KitchenTicketStatus>>({});
 
   // Derive KDS tickets from real active orders — no fake data
   const tickets: KdsTicket[] = activeOrders
-    .filter((o) => ['PLACED', 'PREPARING', 'SERVED'].includes(o.status))
+    .filter((o) => ['PLACED', 'PREPARING', 'READY', 'SERVED'].includes(o.status))
     .map((o) => ({
       id: o.id,
-      orderNumber: `ORD-${o.id.substring(0, 6).toUpperCase()}`,
-      tableNumber: o.tableId ? `Table ${o.tableId.substring(0, 4).toUpperCase()}` : 'Counter',
-      orderType: o.tableId ? 'Dine-In' : 'Takeaway',
+      orderNumber: o.orderNumber || `ORD-${o.id.substring(0, 4).toUpperCase()}`,
+      tableNumber: o.tableName || (o as any).table?.tableName || (o.tableId ? 'Dine-In Table' : 'Counter'),
+      orderType: o.orderType === 'DINE_IN' || o.tableId ? 'Dine-In' : 'Takeaway',
       elapsedMinutes: Math.max(0, Math.floor((Date.now() - new Date(o.createdAt || Date.now()).getTime()) / 60000)),
-      serverName: o.workerId || 'Cashier',
+      serverName: o.createdByWorkerName || (o as any).workerId || 'Cashier',
       station: 'Main Kitchen',
       status: (ticketOverrides[o.id] ||
-        (o.status === 'PLACED' ? 'PENDING' : o.status === 'PREPARING' ? 'PREPARING' : 'READY')
+        (o.status === 'PLACED' ? 'PENDING' : o.status === 'PREPARING' ? 'PREPARING' : o.status === 'READY' ? 'READY' : 'SERVED')
       ) as KitchenTicketStatus,
       items: (o.items || []).map((item: any) => ({
         name: item.itemName || item.name || 'Item',
@@ -53,7 +53,7 @@ export default function KitchenKdsPage() {
       })),
     }));
 
-  const advanceStatus = (ticketId: string) => {
+  const advanceStatus = async (ticketId: string) => {
     const current = tickets.find((t) => t.id === ticketId)?.status;
     const nextStatus: Record<KitchenTicketStatus, KitchenTicketStatus> = {
       PENDING: 'ACCEPTED',
@@ -64,7 +64,21 @@ export default function KitchenKdsPage() {
       CANCELLED: 'CANCELLED',
     };
     if (current) {
-      setTicketOverrides((prev) => ({ ...prev, [ticketId]: nextStatus[current] }));
+      const next = nextStatus[current];
+      setTicketOverrides((prev) => ({ ...prev, [ticketId]: next }));
+
+      const orderStatusMap: Record<KitchenTicketStatus, any> = {
+        PENDING: 'PLACED',
+        ACCEPTED: 'PREPARING',
+        PREPARING: 'PREPARING',
+        READY: 'READY',
+        SERVED: 'SERVED',
+        CANCELLED: 'CANCELLED',
+      };
+      const newOrderStatus = orderStatusMap[next];
+      if (newOrderStatus) {
+        await updateOrderStatus(ticketId, newOrderStatus);
+      }
     }
   };
 

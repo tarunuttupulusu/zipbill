@@ -11,11 +11,13 @@ import {
   RefreshCw,
   TrendingDown,
   ArrowUpRight,
+  Trash2,
 } from 'lucide-react';
 
 export default function InventoryPage() {
-  const { profile } = useApp();
-  const [stock, setStock] = useState<any[]>([]);
+  const { profile, session, currentTenant, inventory, refreshTenantData } = useApp();
+  const activeTenantId = profile?.tenantId || session?.tenantId || currentTenant?.id || '';
+
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('kg');
@@ -23,26 +25,52 @@ export default function InventoryPage() {
   const [minThreshold, setMinThreshold] = useState('5');
   const [search, setSearch] = useState('');
 
-  const lowStockCount = stock.filter((i) => Number(i.currentStock) <= Number(i.minThreshold)).length;
+  const stock = inventory || [];
+  const lowStockCount = stock.filter((i: any) => Number(i.currentStock) <= Number(i.minAlertStock ?? i.minThreshold ?? 5)).length;
 
-  const handleAddStock = (e: React.FormEvent) => {
+  const handleAddStock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
-    const newItem = {
-      id: `inv-${Date.now()}`,
-      name,
-      unit,
-      currentStock: Number(currentStock),
-      minThreshold: Number(minThreshold),
-      costPerUnit: 1000,
-    };
-    setStock([newItem, ...stock]);
+    if (!name.trim() || !activeTenantId) return;
+
+    try {
+      const res = await fetch('/api/tenant/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: activeTenantId,
+          name: name.trim(),
+          unit,
+          currentStock: Number(currentStock),
+          minThreshold: Number(minThreshold),
+        }),
+      });
+      if (res.ok) {
+        await refreshTenantData();
+      }
+    } catch (err) {
+      console.error('Failed to add inventory item:', err);
+    }
+
     setName('');
     setIsAddOpen(false);
   };
 
-  const filteredStock = stock.filter((i) =>
-    i.name.toLowerCase().includes(search.toLowerCase())
+  const handleDeleteStock = async (id: string) => {
+    if (!id || !activeTenantId) return;
+    try {
+      const res = await fetch(`/api/tenant/inventory?id=${encodeURIComponent(id)}&tenantId=${encodeURIComponent(activeTenantId)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        await refreshTenantData();
+      }
+    } catch (err) {
+      console.error('Failed to delete inventory item:', err);
+    }
+  };
+
+  const filteredStock = stock.filter((i: any) =>
+    (i.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -109,21 +137,31 @@ export default function InventoryPage() {
                 <th className="px-6 py-3.5">Min Alert Level</th>
                 <th className="px-6 py-3.5">Unit</th>
                 <th className="px-6 py-3.5">Health Status</th>
+                <th className="px-6 py-3.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-borderLight">
-              {filteredStock.map((i) => {
-                const isLow = Number(i.currentStock) <= Number(i.minThreshold);
+              {filteredStock.map((i: any) => {
+                const isLow = Number(i.currentStock) <= Number(i.minAlertStock ?? i.minThreshold ?? 5);
                 return (
                   <tr key={i.id} className="hover:bg-surfaceMuted/50 transition">
                     <td className="px-6 py-4 font-semibold text-heading">{i.name}</td>
                     <td className="px-6 py-4 font-mono font-semibold text-heading">{i.currentStock} {i.unit}</td>
-                    <td className="px-6 py-4 text-secondary">{i.minThreshold} {i.unit}</td>
+                    <td className="px-6 py-4 text-secondary">{i.minAlertStock ?? i.minThreshold ?? 5} {i.unit}</td>
                     <td className="px-6 py-4 text-muted text-xs uppercase">{i.unit}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${isLow ? 'bg-danger-bg text-danger' : 'bg-success-bg text-success'}`}>
                         {isLow ? 'Low Stock' : 'Adequate'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleDeleteStock(i.id)}
+                        className="p-1.5 text-danger hover:bg-danger-bg rounded-lg transition"
+                        title="Delete Ingredient"
+                      >
+                        <Trash2 className="w-4 h-4 stroke-[2]" />
+                      </button>
                     </td>
                   </tr>
                 );

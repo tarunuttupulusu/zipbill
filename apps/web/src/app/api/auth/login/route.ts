@@ -174,7 +174,9 @@ export async function POST(req: NextRequest) {
       onboardingCompleted,
       enabledModules,
       permissions,
-      redirect: onboardingCompleted ? '/dashboard' : '/onboarding',
+      redirect: user.tenant?.slug 
+        ? `/${user.tenant.slug}/dashboard` 
+        : (onboardingCompleted ? '/dashboard' : '/onboarding'),
     });
   } catch (error: any) {
     console.error('Login API error:', error);

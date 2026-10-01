@@ -95,22 +95,12 @@ async function main() {
   });
 
   // 4. Seed Restaurant Users
-  console.log('Seeding restaurant staff users...');
+  console.log('Seeding restaurant staff users (OWNER, WAITER, KITCHEN)...');
   const staffUsers = [
     {
       email: 'owner@spicegarden.com',
       fullName: 'Rajesh Sharma',
       roleType: 'OWNER' as const,
-    },
-    {
-      email: 'manager@spicegarden.com',
-      fullName: 'Vikram Patel',
-      roleType: 'MANAGER' as const,
-    },
-    {
-      email: 'cashier@spicegarden.com',
-      fullName: 'Priya Verma',
-      roleType: 'CASHIER' as const,
     },
     {
       email: 'waiter@spicegarden.com',

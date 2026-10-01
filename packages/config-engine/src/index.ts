@@ -273,8 +273,7 @@ export function resolveDynamicNavigation(params: {
     };
   }
 
-  // Cashier role focused on checkout & receipts
-  const isCashier = userRole === 'CASHIER';
+  // Operational role restrictions per 3-Role Architecture: OWNER, WAITER, KITCHEN
   const isWaiter = userRole === 'WAITER';
 
   const hasMod = (mod: ModuleToken) => enabledModules.includes(mod);
@@ -282,12 +281,12 @@ export function resolveDynamicNavigation(params: {
 
   const sidebarItems: NavItem[] = [];
 
-  // 1. Dashboard
-  if (!isWaiter && !isCashier) {
+  // 1. Dashboard (Owner only)
+  if (!isWaiter) {
     sidebarItems.push({
       id: 'dashboard',
       title: 'Dashboard',
-      href: '/admin',
+      href: '/dashboard',
       icon: 'LayoutDashboard',
     });
   }
@@ -333,17 +332,17 @@ export function resolveDynamicNavigation(params: {
   }
 
   // 6. Menu Management
-  if (can('catalog:manage') && !isWaiter && !isCashier) {
+  if (can('catalog:manage') && !isWaiter) {
     sidebarItems.push({
       id: 'catalog',
       title: 'Menu & Categories',
-      href: '/catalog',
+      href: '/menu',
       icon: 'BookOpen',
     });
   }
 
   // 7. Inventory
-  if (hasMod('inventory.raw_materials') && can('inventory:view') && !isWaiter && !isCashier) {
+  if (hasMod('inventory.raw_materials') && can('inventory:view') && !isWaiter) {
     sidebarItems.push({
       id: 'inventory',
       title: 'Inventory & Stock',
@@ -353,7 +352,7 @@ export function resolveDynamicNavigation(params: {
   }
 
   // 8. Staff & Roles
-  if (hasMod('staff.shared_access') && can('staff:manage') && !isWaiter && !isCashier) {
+  if (hasMod('staff.shared_access') && can('staff:manage') && !isWaiter) {
     sidebarItems.push({
       id: 'staff',
       title: 'Staff & Devices',
@@ -373,7 +372,7 @@ export function resolveDynamicNavigation(params: {
   }
 
   // 10. Reports
-  if (hasMod('reports.sales_analytics') && can('reports:view') && !isWaiter && !isCashier) {
+  if (hasMod('reports.sales_analytics') && can('reports:view') && !isWaiter) {
     sidebarItems.push({
       id: 'reports',
       title: 'Analytics & Reports',
@@ -383,7 +382,7 @@ export function resolveDynamicNavigation(params: {
   }
 
   // 11. Settings
-  if (can('settings:manage') && !isWaiter && !isCashier) {
+  if (can('settings:manage') && !isWaiter) {
     sidebarItems.push({
       id: 'settings',
       title: 'Store Settings',
@@ -406,11 +405,11 @@ export function resolveDynamicNavigation(params: {
   if (hasMod('operations.kitchen_kds') && can('kds:view')) {
     bottomNavItems.push({ id: 'kitchen', title: 'KDS', href: '/kitchen', icon: 'ChefHat' });
   }
-  if (!isWaiter && !isCashier) {
-    bottomNavItems.push({ id: 'admin', title: 'Admin', href: '/admin', icon: 'Menu' });
+  if (!isWaiter) {
+    bottomNavItems.push({ id: 'dashboard', title: 'More', href: '/dashboard', icon: 'Menu' });
   }
 
-  const defaultRoute = isWaiter ? (hasMod('operations.tables') ? '/tables' : '/pos') : isCashier ? '/pos' : '/admin';
+  const defaultRoute = isWaiter ? (hasMod('operations.tables') ? '/tables' : '/pos') : '/dashboard';
 
   return {
     sidebarItems,

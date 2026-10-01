@@ -25,18 +25,18 @@ export default function RegisterPage() {
   const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1: User Account Fields
-  const [fullName, setFullName] = useState('Vikram Malhotra');
-  const [email, setEmail] = useState('vikram@malhotrahospitality.com');
-  const [password, setPassword] = useState('P@ssword123');
-  const [confirmPassword, setConfirmPassword] = useState('P@ssword123');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Step 2: Restaurant Registration Fields
-  const [restaurantName, setRestaurantName] = useState('The Royal Tandoor & Grill');
+  const [restaurantName, setRestaurantName] = useState('');
   const [businessType, setBType] = useState<BusinessType>('RESTAURANT');
-  const [phone, setPhone] = useState('+91 98450 11223');
-  const [address, setAddress] = useState('104, Indiranagar 100ft Road');
-  const [city, setCity] = useState('Bengaluru');
-  const [state, setState] = useState('Karnataka');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
   const [country, setCountry] = useState('India');
 
   const businessTypes: Array<{ type: BusinessType; name: string; icon: string }> = [
@@ -117,7 +117,17 @@ export default function RegisterPage() {
         isSuperAdmin: false,
       });
 
-      router.push('/dashboard');
+      if (data.tenant) {
+        try {
+          localStorage.setItem('saas_active_tenant', JSON.stringify(data.tenant));
+        } catch {}
+      }
+
+      if (data.tenant?.slug) {
+        router.push(`/${data.tenant.slug}/dashboard`);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: any) {
       console.error('Registration error:', err);
       setErrorMsg(err.message || 'Registration failed. Please try again.');

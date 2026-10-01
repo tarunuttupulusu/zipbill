@@ -18,7 +18,7 @@ export default function ReportsAnalyticsPage() {
 
   // Compute real stats from actual order data
   const completedOrders = activeOrders.filter((o) => o.status === 'COMPLETED');
-  const grossRevenue = completedOrders.reduce((sum, o) => sum + (o.finalTotal || o.subtotal || 0), 0);
+  const grossRevenue = completedOrders.reduce((sum, o) => sum + (o.grandTotal || (o as any).finalTotal || o.subtotal || 0), 0);
   const totalOrders = completedOrders.length;
   const avgTicket = totalOrders > 0 ? Math.round(grossRevenue / totalOrders) : 0;
   const gstCollected = completedOrders.reduce((sum, o) => sum + (o.taxAmount || 0), 0);

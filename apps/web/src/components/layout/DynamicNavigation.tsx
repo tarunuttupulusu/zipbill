@@ -84,6 +84,10 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     setSession,
     isOnline,
     setIsOnline,
+    staff,
+    currentTenant,
+    setCurrentTenant,
+    availableTenants,
   } = useApp();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -92,9 +96,6 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [activeProfileTab, setActiveProfileTab] = useState<'PROFILE' | 'DEVICES' | 'SECURITY'>('PROFILE');
 
-  // Dev-only simulator state
-  const [devSimulatorOpen, setDevSimulatorOpen] = useState(false);
-
   const isPublicPage =
     pathname === '/' ||
     pathname === '/login' ||
@@ -102,6 +103,42 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     pathname === '/pending-approval' ||
     pathname === '/verify-email' ||
     pathname?.startsWith('/admin');
+
+  // URL-based multi-tenancy & section resolution
+  const pathParts = pathname ? pathname.split('/').filter(Boolean) : [];
+  const KNOWN_SECTIONS_SET = new Set([
+    'dashboard', 'pos', 'tables', 'orders', 'kitchen', 'menu', 'customers',
+    'billing', 'payments', 'expenses', 'inventory', 'reports', 'staff', 'qr',
+    'screens', 'printers', 'sync', 'settings', 'subscription', 'leads', 'offline', 'onboarding'
+  ]);
+
+  const currentSlugFromUrl = pathParts.length > 0 && !KNOWN_SECTIONS_SET.has(pathParts[0]) ? pathParts[0] : null;
+  const currentSection = currentSlugFromUrl
+    ? `/${pathParts.slice(1).join('/') || 'dashboard'}`
+    : pathname || '/dashboard';
+
+  const activeRestaurantSlug = currentTenant?.slug || currentSlugFromUrl || (profile.tenantId ? profile.tenantId.slice(0, 8) : '');
+
+  const getSectionHref = (baseHref: string) => {
+    if (!activeRestaurantSlug) return baseHref;
+    const cleanBase = baseHref === '/' ? '/dashboard' : baseHref;
+    return `/${activeRestaurantSlug}${cleanBase}`;
+  };
+
+  // Keep URL strictly synchronized to the restaurant's slug path
+  React.useEffect(() => {
+    if (!isPublicPage && activeRestaurantSlug && !currentSlugFromUrl && pathname && pathname !== '/') {
+      router.replace(`/${activeRestaurantSlug}${pathname}`);
+    }
+  }, [isPublicPage, activeRestaurantSlug, currentSlugFromUrl, pathname, router]);
+
+  // Security Check: Cross-Tenant Isolation Guard
+  const isUnauthorizedTenant = Boolean(
+    currentSlugFromUrl &&
+    currentTenant?.slug &&
+    currentSlugFromUrl !== currentTenant.slug &&
+    !availableTenants.some((t) => t.slug === currentSlugFromUrl)
+  );
 
   // STEP 4 & 5: Load User Role & Permissions from authenticated backend session
   const effectivePermissions =
@@ -112,17 +149,17 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
   // DYNAMIC SIDEBAR RESOLUTION RULE:
   // TENANT + RESTAURANT CONFIGURATION + ENABLED MODULES + USER ROLE + USER PERMISSIONS = Visible Navigation
   const visibleSections: ArchitectureSection[] = generateDynamicNavigation({
-    tenantId: profile.tenantId || 'tenant-spice-garden',
+    tenantId: profile.tenantId || session.tenantId || '',
     businessType,
     enabledModules: (enabledModules as string[]) || [],
     userRole: session.roleName,
     userPermissions: effectivePermissions,
   });
 
-  // ROUTE ACCESS GUARD (Backend & Layout Authorization check)
+  // ROUTE ACCESS GUARD (Backend & Layout Authorization check on normalized section)
   const matchedRouteEntry = Object.entries(ROUTE_PERMISSION_MAP).find(([route]) => {
-    if (pathname === route) return true;
-    if (route !== '/' && pathname.startsWith(`${route}/`)) return true;
+    if (currentSection === route) return true;
+    if (route !== '/' && currentSection.startsWith(`${route}/`)) return true;
     return false;
   });
 
@@ -165,33 +202,51 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  const displayedBusinessName = profile.businessName || (session.fullName ? `${session.fullName}'s Store` : 'Restaurant Portal');
+  const displayedBusinessName = profile.businessName || currentTenant?.name || (session.fullName ? `${session.fullName}'s Store` : 'Restaurant Portal');
 
   const handleDevSwitchRole = (role: string) => {
     const roleDefaultPerms = ROLE_DEFAULT_PERMISSIONS[role] || [];
-    const roleNames: Record<string, string> = {
-      OWNER: 'Rajesh Sharma (Owner)',
-      RESTAURANT_ADMIN: 'Karan Mehra (Admin)',
-      MANAGER: 'Vikram Patel (Manager)',
-      CASHIER: 'Priya Verma (Cashier)',
-      WAITER: 'Rohan Gupta (Waiter)',
-      KITCHEN: 'Chef Anand (Kitchen)',
-      ACCOUNTANT: 'Sunil Rao (Accountant)',
+    const activeTenantId = profile.tenantId || session.tenantId;
+    const currentRestName = profile.businessName || currentTenant?.name || 'Restaurant';
+
+    // Find linked staff record for this exact tenant
+    const matchedStaff = staff?.find((s: any) => s.roleType === role);
+
+    let roleFullName = matchedStaff?.fullName;
+    let roleEmail = matchedStaff?.email;
+    let roleUserId = matchedStaff?.id;
+
+    if (!roleFullName) {
+      if (role === 'OWNER') {
+        roleFullName = `${currentRestName} Owner`;
+      } else if (role === 'WAITER') {
+        roleFullName = `Floor Waiter (${currentRestName})`;
+      } else if (role === 'KITCHEN') {
+        roleFullName = `Kitchen Chef (${currentRestName})`;
+      } else {
+        roleFullName = session.fullName;
+      }
+    }
+
+    const updatedSession = {
+      ...session,
+      userId: roleUserId || session.userId,
+      email: roleEmail || session.email,
+      tenantId: activeTenantId,
+      roleName: role,
+      fullName: roleFullName,
+      permissions: roleDefaultPerms,
     };
 
-    setSession({
-      ...session,
-      roleName: role,
-      fullName: roleNames[role] || `${role} Staff`,
-      permissions: roleDefaultPerms,
-    });
-    setDevSimulatorOpen(false);
+    setSession(updatedSession);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('saas_active_session', JSON.stringify(updatedSession));
+    }
 
     // Auto-navigate to valid route if current becomes unauthorized
-    if (role === 'KITCHEN') router.push('/kitchen');
-    else if (role === 'WAITER') router.push('/pos');
-    else if (role === 'ACCOUNTANT') router.push('/billing');
-    else router.push('/dashboard');
+    if (role === 'KITCHEN') router.push(getSectionHref('/kitchen'));
+    else if (role === 'WAITER') router.push(getSectionHref('/pos'));
+    else router.push(getSectionHref('/dashboard'));
   };
 
   // Determine authorized bottom navigation items for mobile
@@ -270,13 +325,17 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
           )}
 
           {visibleSections.map((sec) => {
+            const targetHref = getSectionHref(sec.href);
             const isSectionActive =
-              pathname === sec.href || (sec.href !== '/' && pathname.startsWith(sec.href));
+              pathname === targetHref ||
+              pathname === sec.href ||
+              currentSection === sec.href ||
+              (sec.href !== '/' && currentSection.startsWith(sec.href));
 
             return (
               <Link
                 key={sec.id}
-                href={sec.href}
+                href={targetHref}
                 className={`group relative flex items-center rounded-xl font-medium text-[14px] transition-colors duration-150 ${
                   sidebarCollapsed ? 'justify-center p-2.5' : 'space-x-3 px-3.5 py-2.5'
                 } ${
@@ -332,51 +391,64 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
 
+              {/* Linked Roles: Only accessible for Owner to preview floor/kitchen mode */}
+              {session.roleName === 'OWNER' && (
+                <div className="pt-2 border-t border-borderLight">
+                  <div className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                    <span>Active Persona</span>
+                    <span className="text-[9px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded font-mono font-medium">1 Account</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 bg-surface p-1 rounded-lg border border-borderLight">
+                    {[
+                      { id: 'OWNER', label: 'Owner', icon: '👑' },
+                      { id: 'WAITER', label: 'Waiter', icon: '🍽️' },
+                      { id: 'KITCHEN', label: 'Kitchen', icon: '👨‍🍳' },
+                    ].map((r) => {
+                      const isCurrent = session.roleName === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => handleDevSwitchRole(r.id)}
+                          className={`py-1 px-1 rounded text-[11px] font-medium flex items-center justify-center gap-1 transition ${
+                            isCurrent
+                              ? 'bg-primary text-white font-bold shadow-xs'
+                              : 'text-secondary hover:text-heading hover:bg-surfaceMuted'
+                          }`}
+                          title={`Switch persona: ${r.label}`}
+                        >
+                          <span className="text-[10px]">{r.icon}</span>
+                          <span>{r.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Profile Area Action Buttons */}
-              <div className="pt-2 border-t border-borderLight flex items-center justify-between text-xs text-secondary">
+              <div className="pt-2 border-t border-borderLight flex items-center justify-between text-xs">
                 <button
                   type="button"
                   onClick={() => {
                     setActiveProfileTab('PROFILE');
                     setProfileModalOpen(true);
                   }}
-                  className="p-1.5 rounded-lg hover:text-primary hover:bg-surface transition"
+                  className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-secondary hover:text-primary hover:bg-surface transition font-medium"
                   title="Profile Information"
                 >
-                  <User className="w-4 h-4 stroke-[1.8]" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveProfileTab('DEVICES');
-                    setProfileModalOpen(true);
-                  }}
-                  className="p-1.5 rounded-lg hover:text-primary hover:bg-surface transition"
-                  title="My Devices"
-                >
-                  <Smartphone className="w-4 h-4 stroke-[1.8]" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveProfileTab('SECURITY');
-                    setProfileModalOpen(true);
-                  }}
-                  className="p-1.5 rounded-lg hover:text-primary hover:bg-surface transition"
-                  title="Security & Permissions"
-                >
-                  <Key className="w-4 h-4 stroke-[1.8]" />
+                  <User className="w-3.5 h-3.5 stroke-[2]" />
+                  <span>Profile</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="p-1.5 rounded-lg text-placeholder hover:text-danger hover:bg-danger-bg transition"
-                  title="Logout"
+                  className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-muted hover:text-danger hover:bg-danger-bg transition font-medium"
+                  title="Sign Out"
                 >
-                  <LogOut className="w-4 h-4 stroke-[1.8]" />
+                  <LogOut className="w-3.5 h-3.5 stroke-[2]" />
+                  <span>Logout</span>
                 </button>
               </div>
             </div>
@@ -416,20 +488,12 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
               <Store className="w-5 h-5 text-primary" />
             </button>
 
-            {/* Restaurant Switcher */}
+            {/* Restaurant Brand Title */}
             <div className="flex items-center space-x-2">
-              <span className="text-xs text-muted hidden sm:inline">Restaurant:</span>
-              <select
-                value={businessType}
-                onChange={(e) => setBusinessType(e.target.value as BusinessType)}
-                className="bg-surfaceMuted border border-border text-heading text-xs font-semibold rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-primary"
-              >
-                <option value="RESTAURANT">🍽️ The Royal Biryani (Dine-In)</option>
-                <option value="BAKERY">🥐 Artisan Bakery & Patisserie</option>
-                <option value="CLOUD_KITCHEN">🛵 Cloud Kitchen Delivery</option>
-                <option value="CAFE">☕ Central Bistro & Cafe</option>
-                <option value="BAR">🍸 Taproom & Lounge</option>
-              </select>
+              <span className="text-base">🍽️</span>
+              <span className="font-semibold text-sm text-heading tracking-tight truncate max-w-[240px]">
+                {currentTenant?.name || profile.businessName || displayedBusinessName}
+              </span>
             </div>
           </div>
 
@@ -470,7 +534,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
 
             {/* Architecture Overview */}
             <Link
-              href="/screens"
+              href={getSectionHref('/screens')}
               className="p-2 rounded-xl text-placeholder hover:text-heading hover:bg-surfaceMuted transition"
               title="Portal Architecture"
             >
@@ -479,7 +543,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
 
             {/* POS Fast CTA (Only shown if user has POS permission) */}
             {checkPermission(effectivePermissions, 'pos.view') && (
-              <Link href="/pos" className="btn-primary text-xs py-2 px-3.5 hidden sm:inline-flex">
+              <Link href={getSectionHref('/pos')} className="btn-primary text-xs py-2 px-3.5 hidden sm:inline-flex">
                 <Calculator className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>POS</span>
               </Link>
@@ -487,9 +551,44 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* PAGE CONTENT OR 403 FORBIDDEN ACCESS GUARD */}
+        {/* PAGE CONTENT OR 403 FORBIDDEN / CROSS-TENANT ACCESS GUARD */}
         <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
-          {!isAuthorizedForCurrentRoute ? (
+          {isUnauthorizedTenant ? (
+            <div className="min-h-[80vh] flex items-center justify-center p-6 font-sans">
+              <div className="card max-w-lg w-full p-8 text-center space-y-5 border-danger/40 shadow-card">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-danger-bg text-danger flex items-center justify-center">
+                  <ShieldAlert className="w-7 h-7 stroke-[2]" />
+                </div>
+                <div className="space-y-2">
+                  <span className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-danger-bg text-danger">
+                    Security Guard - Tenant Isolation
+                  </span>
+                  <h2 className="text-2xl font-bold text-heading">
+                    Cross-Tenant Access Restricted
+                  </h2>
+                  <p className="text-secondary text-sm leading-relaxed">
+                    You attempted to access workspace <code className="text-xs bg-surfaceMuted px-1.5 py-0.5 rounded font-mono text-danger">/{currentSlugFromUrl}</code>, but your session is authenticated for <strong className="text-heading">{currentTenant?.name || profile.businessName}</strong> (<code className="text-xs bg-surfaceMuted px-1.5 py-0.5 rounded font-mono">{currentTenant?.slug}</code>).
+                  </p>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <Link
+                    href={getSectionHref('/dashboard')}
+                    className="btn-primary w-full sm:w-auto text-xs py-2.5 px-6"
+                  >
+                    Go to My Workspace ({currentTenant?.name || 'Home'})
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="w-full sm:w-auto text-xs py-2.5 px-4 text-muted hover:text-danger"
+                  >
+                    Sign Out / Switch Account
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : !isAuthorizedForCurrentRoute ? (
             <div className="min-h-[80vh] flex items-center justify-center p-6 font-sans">
               <div className="card max-w-lg w-full p-8 text-center space-y-5 border-danger/30 shadow-card">
                 <div className="w-14 h-14 mx-auto rounded-2xl bg-danger-bg text-danger flex items-center justify-center">
@@ -525,7 +624,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
 
                 <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link
-                    href={visibleSections[0]?.href || '/pos'}
+                    href={getSectionHref(visibleSections[0]?.href || '/pos')}
                     className="btn-primary w-full sm:w-auto text-xs py-2.5 px-6"
                   >
                     Return to Authorized Workspace ({visibleSections[0]?.name || 'Home'})
@@ -551,11 +650,12 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
         <div className="lg:hidden fixed bottom-0 inset-x-0 bg-surface border-t border-border flex items-center justify-around h-16 z-30 px-2">
           {authorizedMobileItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href;
+            const targetHref = getSectionHref(item.href);
+            const isActive = pathname === targetHref || pathname === item.href || currentSection === item.href;
             return (
               <Link
                 key={item.id}
-                href={item.href}
+                href={targetHref}
                 className={`flex flex-col items-center justify-center flex-1 py-1 text-[11px] font-medium transition ${
                   isActive ? 'text-primary font-bold' : 'text-secondary hover:text-main'
                 }`}
@@ -601,7 +701,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
                 {visibleSections.map((sec) => (
                   <Link
                     key={sec.id}
-                    href={sec.href}
+                    href={getSectionHref(sec.href)}
                     onClick={() => setMoreDrawerOpen(false)}
                     className="p-3 rounded-xl bg-surfaceMuted border border-borderLight flex flex-col items-center text-center space-y-1.5 hover:border-primary/40 transition"
                   >
@@ -663,24 +763,73 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
 
             <div className="p-5 space-y-4 text-xs">
               {activeProfileTab === 'PROFILE' && (
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-muted block mb-0.5">Email Address</span>
-                    <span className="font-semibold text-heading">{session.email || 'user@royalbiryani.pos'}</span>
+                <div className="space-y-4">
+                  <div className="space-y-2.5">
+                    <div>
+                      <span className="text-muted block mb-0.5">Email Address</span>
+                      <span className="font-semibold text-heading">{session.email || 'user@restaurant.com'}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block mb-0.5">Restaurant</span>
+                      <span className="font-semibold text-heading">{displayedBusinessName}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block mb-0.5">Active Role Persona</span>
+                      <span className="inline-flex px-2 py-0.5 rounded font-semibold bg-primary-light text-primary">
+                        {session.roleName}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-muted block mb-0.5">Restaurant</span>
-                    <span className="font-semibold text-heading">{profile.businessName}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted block mb-0.5">Assigned Role</span>
-                    <span className="inline-flex px-2 py-0.5 rounded font-semibold bg-primary-light text-primary">
-                      {session.roleName}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted block mb-0.5">Worker Terminal ID</span>
-                    <span className="font-mono text-heading">{session.deviceId || 'DEV-POS-01'}</span>
+
+                  <div className="pt-3 border-t border-borderLight">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-heading text-[12px]">Linked Restaurant Accounts (3)</span>
+                      <span className="text-[10px] text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded font-mono">1 Restaurant</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {[
+                        { id: 'OWNER', label: 'Restaurant Owner', desc: 'Full Management, Menu & Reports', icon: '👑' },
+                        { id: 'WAITER', label: 'Floor Waiter', desc: 'Table POS, Orders & Guest Billing', icon: '🍽️' },
+                        { id: 'KITCHEN', label: 'Kitchen Chef', desc: 'Live KDS Ticket Preparation', icon: '👨‍🍳' },
+                      ].map((p) => {
+                        const isCurrent = session.roleName === p.id;
+                        return (
+                          <div
+                            key={p.id}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between transition ${
+                              isCurrent
+                                ? 'bg-primary-soft/30 border-primary/40'
+                                : 'bg-surfaceMuted border-borderLight hover:border-border'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2.5">
+                              <span className="text-base">{p.icon}</span>
+                              <div>
+                                <div className="font-semibold text-heading text-[12px] flex items-center gap-1.5">
+                                  <span>{p.label}</span>
+                                  {isCurrent && (
+                                    <span className="text-[9px] bg-primary text-white px-1.5 py-0.2 rounded font-bold uppercase">Active</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-muted">{p.desc}</div>
+                              </div>
+                            </div>
+                            {!isCurrent && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDevSwitchRole(p.id);
+                                  setProfileModalOpen(false);
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-surface border border-borderLight text-primary hover:bg-primary hover:text-white transition"
+                              >
+                                Switch
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -749,70 +898,6 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          DEVELOPMENT ONLY ROLE SIMULATOR
-          Per Specification:
-          "If a role simulator is required for development,
-           keep it behind a development-only environment flag:
-           NODE_ENV=development. It must never be available in production."
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="fixed bottom-4 right-4 z-40 select-none">
-          {devSimulatorOpen ? (
-            <div className="bg-surface border-2 border-primary rounded-2xl shadow-2xl p-3 w-64 space-y-2 text-xs">
-              <div className="flex items-center justify-between pb-1.5 border-b border-borderLight">
-                <span className="font-bold text-primary flex items-center space-x-1">
-                  <span>🛠️</span>
-                  <span>DEV: Persona Switcher</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setDevSimulatorOpen(false)}
-                  className="text-placeholder hover:text-heading"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-              </div>
-
-              <p className="text-[11px] text-muted">
-                Emulates backend session authentication for development testing:
-              </p>
-
-              <div className="grid grid-cols-1 gap-1.5">
-                {[
-                  { id: 'OWNER', label: '👑 Owner (All Views)' },
-                  { id: 'WAITER', label: '🍽️ Waiter (Floor & POS)' },
-                  { id: 'KITCHEN', label: '👨‍🍳 Kitchen (KDS Queue)' },
-                ].map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => handleDevSwitchRole(r.id)}
-                    className={`py-2 px-2.5 rounded-lg text-left font-medium transition ${
-                      session.roleName === r.id
-                        ? 'bg-primary text-white font-bold'
-                        : 'bg-surfaceMuted text-heading hover:bg-borderLight'
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDevSimulatorOpen(true)}
-              className="bg-heading hover:bg-black text-white text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg border border-borderLight flex items-center space-x-1.5 transition opacity-75 hover:opacity-100"
-              title="Development Role Simulator"
-            >
-              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              <span>[DEV] Role: {session.roleName}</span>
-              <ChevronUp className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

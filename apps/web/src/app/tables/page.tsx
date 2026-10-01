@@ -18,7 +18,7 @@ import {
 import { TableStatus } from '@platform/types';
 
 export default function TablesFloorPage() {
-  const { tables, setTables, profile, updateTableStatus } = useApp();
+  const { tables, setTables, profile, session, currentTenant, refreshTenantData } = useApp();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [tableNumber, setTableNumber] = useState('');
   const [tableName, setTableName] = useState('');
@@ -39,10 +39,11 @@ export default function TablesFloorPage() {
   const handleAddTable = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tableNumber || !tableName) return;
+    const activeTenantId = profile.tenantId || session.tenantId || currentTenant?.id || '';
 
     const newTable = {
       id: `tbl-${Date.now()}`,
-      tenantId: profile.tenantId,
+      tenantId: activeTenantId,
       tableNumber,
       tableName,
       capacity: Number(capacity),
@@ -54,17 +55,20 @@ export default function TablesFloorPage() {
     setTables([...tables, newTable]);
 
     try {
-      await fetch('/api/tenant/tables', {
+      const res = await fetch('/api/tenant/tables', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenantId: profile.tenantId,
+          tenantId: activeTenantId,
           tableNumber,
           tableName,
           capacity: Number(capacity),
           status: 'AVAILABLE',
         }),
       });
+      if (res.ok) {
+        refreshTenantData().catch(() => {});
+      }
     } catch {}
 
     setTableNumber('');

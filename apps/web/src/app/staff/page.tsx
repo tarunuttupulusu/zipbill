@@ -28,8 +28,10 @@ interface CustomRole {
 }
 
 export default function StaffAndSecurityPage() {
-  const { profile, session, setSession } = useApp();
+  const { profile, session, setSession, currentTenant, staff, refreshTenantData } = useApp();
   const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'ROLES' | 'ACTIVITY' | 'DEVICES'>('DIRECTORY');
+
+  const activeTenantId = profile?.tenantId || session?.tenantId || currentTenant?.id || '';
 
   // Custom Role Wizard State
   const [showRoleModal, setShowRoleModal] = useState(false);
@@ -48,8 +50,15 @@ export default function StaffAndSecurityPage() {
 
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
 
-  // Staff, activities, and devices start empty — added by the restaurant owner
-  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; email: string; role: string; status: string; phone: string }>>([]);
+  // Staff list directly mapped from database
+  const staffList = (staff || []).map((s: any) => ({
+    id: s.id,
+    name: s.fullName || s.name,
+    email: s.email,
+    phone: s.phone || 'N/A',
+    role: s.roleType || 'WAITER',
+    status: s.isActive ? 'ACTIVE' : 'INACTIVE',
+  }));
   const workerActivities: Array<{ worker: string; action: string; table: string; device: string; time: string }> = [];
   const devices: Array<{ name: string; type: string; user: string; platform: string; status: string; lastActive: string }> = [];
 
@@ -104,6 +113,58 @@ export default function StaffAndSecurityPage() {
     setRoleDesc('');
   };
 
+  // Add Staff Member Modal State (Strictly WAITER or KITCHEN per Specification)
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState<'WAITER' | 'KITCHEN'>('WAITER');
+
+  const handleAddStaffMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffName.trim() || !newStaffEmail.trim() || !activeTenantId) return;
+
+    try {
+      const res = await fetch('/api/tenant/staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: activeTenantId,
+          name: newStaffName,
+          email: newStaffEmail,
+          phone: newStaffPhone,
+          role: newStaffRole,
+        }),
+      });
+      if (res.ok) {
+        await refreshTenantData();
+      }
+    } catch (err) {
+      console.error('Failed to add staff member:', err);
+    }
+
+    setShowAddStaffModal(false);
+    setNewStaffName('');
+    setNewStaffEmail('');
+    setNewStaffPhone('');
+    setNewStaffRole('WAITER');
+  };
+
+  const handleDeleteStaffMember = async (id: string) => {
+    if (!activeTenantId || !id) return;
+    try {
+      const res = await fetch(
+        `/api/tenant/staff?id=${encodeURIComponent(id)}&tenantId=${encodeURIComponent(activeTenantId)}`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        await refreshTenantData();
+      }
+    } catch (err) {
+      console.error('Failed to delete staff member:', err);
+    }
+  };
+
   return (
     <div className="p-8 sm:p-10 max-w-[1400px] mx-auto space-y-8 font-sans">
       {/* Top Header */}
@@ -113,7 +174,7 @@ export default function StaffAndSecurityPage() {
             Staff & Role Permissions
           </h1>
           <p className="text-[14px] text-secondary mt-1">
-            Role-Based Access Control (RBAC), custom roles configurator, and immutable micro-action audit trail
+            Role-Based Access Control (RBAC) & Staff Account Management (Owner, Waiter, Kitchen)
           </p>
         </div>
 
@@ -128,7 +189,7 @@ export default function StaffAndSecurityPage() {
             <ShieldCheck className="w-4 h-4 stroke-[2]" />
             <span>Create Custom Role</span>
           </button>
-          <button className="btn-primary">
+          <button onClick={() => setShowAddStaffModal(true)} className="btn-primary">
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>Add Staff Member</span>
           </button>
@@ -190,7 +251,7 @@ export default function StaffAndSecurityPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-borderLight">
-                {staffList.map((s) => (
+                {staffList.map((s: any) => (
                   <tr key={s.id} className="hover:bg-surfaceMuted/50 transition">
                     <td className="px-6 py-4">
                       <div className="font-semibold text-heading">{s.name}</div>
@@ -208,7 +269,15 @@ export default function StaffAndSecurityPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="text-primary hover:underline text-xs font-semibold">Edit Permissions</button>
+                      <div className="flex items-center justify-end space-x-2">
+                        <button
+                          onClick={() => handleDeleteStaffMember(s.id)}
+                          className="p-1.5 text-danger hover:bg-danger-bg rounded-lg transition"
+                          title="Remove Staff Member"
+                        >
+                          <Trash2 className="w-4 h-4 stroke-[2]" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -542,6 +611,106 @@ export default function StaffAndSecurityPage() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ADD STAFF MEMBER MODAL
+          Per Specification Section 9:
+          "Role options MUST contain ONLY: Waiter, Kitchen.
+           Do NOT show: Manager, Cashier, Accountant, Admin."
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {showAddStaffModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl border border-border max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-borderLight pb-3">
+              <h3 className="font-bold text-heading text-base">Add New Staff Member</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddStaffModal(false)}
+                className="text-placeholder hover:text-heading"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleAddStaffMember} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-heading mb-1.5">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  placeholder="e.g. Rahul Sharma"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-heading mb-1.5">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newStaffEmail}
+                  onChange={(e) => setNewStaffEmail(e.target.value)}
+                  placeholder="e.g. rahul@restaurant.com"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-heading mb-1.5">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  value={newStaffPhone}
+                  onChange={(e) => setNewStaffPhone(e.target.value)}
+                  placeholder="+91 98765 43210"
+                  className="input-field"
+                />
+              </div>
+
+              {/* ROLE SELECTION: STRICTLY WAITER OR KITCHEN ONLY */}
+              <div>
+                <label className="block text-xs font-semibold text-heading mb-1.5">
+                  Assigned Restaurant Role *
+                </label>
+                <select
+                  value={newStaffRole}
+                  onChange={(e) => setNewStaffRole(e.target.value as any)}
+                  className="input-field font-semibold"
+                >
+                  <option value="WAITER">🍽️ Waiter (Floor Orders & POS)</option>
+                  <option value="KITCHEN">👨‍🍳 Kitchen (KDS & Preparation Queue)</option>
+                </select>
+                <p className="text-[11px] text-muted mt-1">
+                  Restricted to standard operational roles per 3-Role Architecture spec.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-borderLight flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStaffModal(false)}
+                  className="btn-secondary text-xs py-2 px-4"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-xs py-2 px-5 font-semibold"
+                >
+                  Create Staff Account
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

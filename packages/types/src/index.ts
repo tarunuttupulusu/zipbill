@@ -23,13 +23,13 @@ export type RegistrationStatus =
 export type UserRoleType =
   | 'SUPER_ADMIN'
   | 'OWNER'
-  | 'ADMIN'
-  | 'MANAGER'
-  | 'CASHIER'
   | 'WAITER'
-  | 'KITCHEN'
-  | 'ACCOUNTANT'
-  | 'CUSTOM';
+  | 'KITCHEN';
+
+export type RestaurantRole =
+  | 'OWNER'
+  | 'WAITER'
+  | 'KITCHEN';
 
 export type TableStatus =
   | 'AVAILABLE'
@@ -305,6 +305,7 @@ export interface MenuItem {
   imageUrl?: string;
   sku?: string;
   isAvailable: boolean;
+  sortOrder?: number;
   kitchenStationId?: string;
   variants?: MenuVariant[];
   modifierGroups?: ModifierGroup[];

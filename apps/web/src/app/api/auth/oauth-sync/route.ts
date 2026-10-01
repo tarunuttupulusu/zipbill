@@ -1,92 +1,96 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
-import { supabaseAdmin } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const {
-      fullName,
-      email,
-      password,
-      restaurantName,
-      businessType = 'RESTAURANT',
-      phone,
-      address,
-      city,
-      state,
-      country = 'India',
-    } = body;
+    const { userId, email, fullName } = await req.json();
 
-    if (!email || !restaurantName || !fullName) {
+    if (!userId || !email) {
       return NextResponse.json(
-        { error: 'Full name, email, and restaurant name are required.' },
+        { error: 'User ID and email are required for OAuth synchronization.' },
         { status: 400 }
       );
     }
 
-    // 1. Create User in Supabase Auth (auth.users)
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password: password || 'DefaultSecurePassword123!',
-      email_confirm: true,
-      user_metadata: {
-        full_name: fullName,
-        phone: phone || '',
+    const cleanName = fullName || email.split('@')[0] || 'User';
+
+    // 1. Check if user already exists in PostgreSQL
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [{ id: userId }, { authUserId: userId }, { email }],
+      },
+      include: {
+        tenant: {
+          include: {
+            businessProfile: true,
+            modules: true,
+          },
+        },
       },
     });
 
-    if (authError || !authData.user) {
-      console.warn('Supabase auth creation note:', authError?.message);
-      // If user already exists in auth.users, check if they exist in DB
-      if (authError?.message?.includes('already been registered')) {
-        return NextResponse.json(
-          { error: 'An account with this email already exists. Please login instead.' },
-          { status: 409 }
-        );
-      }
-      return NextResponse.json(
-        { error: authError?.message || 'Failed to create authentication account.' },
-        { status: 400 }
-      );
+    if (user && user.tenant) {
+      // User and restaurant already exist
+      return NextResponse.json({
+        success: true,
+        isNew: false,
+        tenant: user.tenant,
+        profile: user.tenant.businessProfile,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          roleType: user.roleType,
+          tenantId: user.tenantId,
+        },
+      });
     }
 
-    const authUserId = authData.user.id;
-
-    // 2. Generate tenant slug
+    // 2. First-time login: Create clean restaurant workspace for this user
+    const restaurantName = `${cleanName}'s Restaurant`;
     const baseSlug = restaurantName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 30);
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
-    // 3. Create Tenant, BusinessProfile, User record, and RegistrationRequest in PostgreSQL
     const result = await prisma.$transaction(async (tx) => {
-      // Create Tenant with APPROVED status for immediate onboarding
+      // 1. Ensure Profile record exists first in public.profiles for foreign key constraints
+      await tx.$executeRawUnsafe(
+        `INSERT INTO public.profiles (id, full_name, phone, created_at, updated_at)
+         VALUES ($1::uuid, $2, '', NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name`,
+        userId,
+        cleanName
+      );
+
+      // 2. Create Tenant with APPROVED status
       const tenant = await tx.tenant.create({
         data: {
           slug,
           name: restaurantName,
-          businessType: businessType as any,
+          businessType: 'RESTAURANT',
           status: 'APPROVED',
         },
       });
 
-      // Update owner_user_id on Tenant
+      // 3. Update owner_user_id on Tenant
       await tx.$executeRawUnsafe(
         `UPDATE public."Tenant" SET owner_user_id = $1::uuid WHERE id = $2`,
-        authUserId,
+        userId,
         tenant.id
       );
 
-      // Create BusinessProfile
+      // 4. Create BusinessProfile
       const profile = await tx.businessProfile.create({
         data: {
           tenantId: tenant.id,
           businessName: restaurantName,
-          phone: phone || '',
+          phone: '',
           email,
-          address: address || '',
-          city: city || 'Bengaluru',
-          state: state || 'Karnataka',
-          country: country || 'IN',
+          address: '',
+          city: '',
+          state: '',
+          country: 'IN',
           currencyCode: 'INR',
           currencySymbol: '₹',
           timezone: 'Asia/Kolkata',
@@ -94,14 +98,14 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Update user_id on BusinessProfile
+      // 5. Update user_id on BusinessProfile
       await tx.$executeRawUnsafe(
         `UPDATE public."BusinessProfile" SET user_id = $1::uuid WHERE id = $2`,
-        authUserId,
+        userId,
         profile.id
       );
 
-      // Create the 3 linked roles for this restaurant: OWNER, WAITER, KITCHEN
+      // 6. Create the 3 linked roles for this restaurant: OWNER, WAITER, KITCHEN
       const ownerRole = await tx.role.upsert({
         where: { tenantId_name: { tenantId: tenant.id, name: 'OWNER' } },
         update: {},
@@ -153,69 +157,68 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 1. Create Owner User (linked to Supabase auth user)
-      const user = await tx.user.create({
-        data: {
-          id: authUserId,
+      // 7. Create Owner User
+      const newUser = await tx.user.upsert({
+        where: { email },
+        update: {
+          id: userId,
+          authUserId: userId,
+          tenantId: tenant.id,
+          roleType: 'OWNER',
+          roleId: ownerRole.id,
+        },
+        create: {
+          id: userId,
+          authUserId: userId,
           tenantId: tenant.id,
           email,
-          passwordHash: password || 'DefaultSecurePassword123!',
-          fullName,
-          phone: phone || null,
+          fullName: cleanName,
           roleType: 'OWNER',
           roleId: ownerRole.id,
           isActive: true,
         },
       });
 
-      // 2. Create Linked Floor Waiter User for this Restaurant
-      await tx.user.create({
-        data: {
+      // 8. Create Linked Floor Waiter User for this Restaurant
+      await tx.user.upsert({
+        where: { email: `waiter@${slug}.pos` },
+        update: { tenantId: tenant.id, roleId: waiterRole.id },
+        create: {
           tenantId: tenant.id,
           email: `waiter@${slug}.pos`,
           fullName: `Floor Waiter (${restaurantName})`,
-          phone: phone || null,
           roleType: 'WAITER',
           roleId: waiterRole.id,
           isActive: true,
         },
       });
 
-      // 3. Create Linked Kitchen Chef User for this Restaurant
-      await tx.user.create({
-        data: {
+      // 9. Create Linked Kitchen Chef User for this Restaurant
+      await tx.user.upsert({
+        where: { email: `kitchen@${slug}.pos` },
+        update: { tenantId: tenant.id, roleId: kitchenRole.id },
+        create: {
           tenantId: tenant.id,
           email: `kitchen@${slug}.pos`,
           fullName: `Kitchen Chef (${restaurantName})`,
-          phone: phone || null,
           roleType: 'KITCHEN',
           roleId: kitchenRole.id,
           isActive: true,
         },
       });
 
-      // Ensure Profile exists for Supabase Auth UUID
-      await tx.$executeRawUnsafe(
-        `INSERT INTO public.profiles (id, full_name, phone, created_at, updated_at)
-         VALUES ($1::uuid, $2, $3, NOW(), NOW())
-         ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name`,
-        authUserId,
-        fullName,
-        phone || ''
-      );
-
       // Create RestaurantMember relationship
       await tx.restaurantMember.upsert({
         where: {
           tenantId_userId: {
             tenantId: tenant.id,
-            userId: authUserId,
+            userId,
           },
         },
         update: { role: 'OWNER' },
         create: {
           tenantId: tenant.id,
-          userId: authUserId,
+          userId,
           role: 'OWNER',
           roleId: ownerRole.id,
           isActive: true,
@@ -236,55 +239,39 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Create RegistrationRequest (auto-approved for instant start)
-      const registration = await tx.registrationRequest.create({
+      // Create RegistrationRequest (approved)
+      await tx.registrationRequest.create({
         data: {
           tenantId: tenant.id,
-          applicantName: fullName,
+          applicantName: cleanName,
           applicantEmail: email,
-          applicantPhone: phone || '',
-          businessType: businessType as any,
+          applicantPhone: '',
+          businessType: 'RESTAURANT',
           status: 'APPROVED',
           intendedModules: defaultModules,
         },
       });
 
-      // Record Audit Log
-      await tx.auditLog.create({
-        data: {
-          tenantId: tenant.id,
-          userId: user.id,
-          userName: fullName,
-          action: 'REGISTER_RESTAURANT',
-          entityType: 'TENANT',
-          entityId: tenant.id,
-          metadataJson: {
-            restaurantName,
-            businessType,
-            email,
-            authUserId,
-          },
-        },
-      });
-
-      return { tenant, profile, user, registration };
+      return { tenant, profile, user: newUser };
     });
 
     return NextResponse.json({
       success: true,
-      message: 'Account created with clean, dedicated restaurant database.',
-      userId: authUserId,
-      tenantId: result.tenant.id,
+      isNew: true,
       tenant: result.tenant,
       profile: result.profile,
-      user: result.user,
-      registrationId: result.registration.id,
-      status: 'APPROVED',
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        fullName: result.user.fullName,
+        roleType: result.user.roleType,
+        tenantId: result.user.tenantId,
+      },
     });
   } catch (error: any) {
-    console.error('Registration API error:', error);
+    console.error('OAuth sync error:', error);
     return NextResponse.json(
-      { error: 'Failed to process registration request.', details: error.message },
+      { error: 'Failed to synchronize OAuth user profile.', details: error.message },
       { status: 500 }
     );
   }

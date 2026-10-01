@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export default function CustomersDirectoryPage() {
-  const { customers, setCustomers, profile } = useApp();
+  const { customers, setCustomers, profile, session, currentTenant, refreshTenantData } = useApp();
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [name, setName] = useState('');
@@ -33,9 +33,11 @@ export default function CustomersDirectoryPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !phone) return;
+    const activeTenantId = profile.tenantId || session.tenantId || currentTenant?.id || '';
+
     const newCustomer = {
       id: `cust-${Date.now()}`,
-      tenantId: profile.tenantId,
+      tenantId: activeTenantId,
       name,
       phone,
       email: email || '',
@@ -48,16 +50,19 @@ export default function CustomersDirectoryPage() {
 
     // Save to DB
     try {
-      await fetch('/api/tenant/customers', {
+      const res = await fetch('/api/tenant/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenantId: profile.tenantId,
+          tenantId: activeTenantId,
           name,
           phone,
           email,
         }),
       });
+      if (res.ok) {
+        refreshTenantData().catch(() => {});
+      }
     } catch {}
 
     setName('');

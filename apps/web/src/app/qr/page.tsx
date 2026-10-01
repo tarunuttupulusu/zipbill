@@ -23,7 +23,11 @@ const QR_TABS = [
 
 export default function QrAndDigitalSectionPage() {
   const [activeTab, setActiveTab] = useState('menu');
-  const { tables, profile } = useApp();
+  const { tables, profile, activeOrders, stats } = useApp();
+  const currencySymbol = profile.currencySymbol || '₹';
+
+  const digitalOrders = activeOrders.filter((o) => o.orderType === 'DINE_IN' || o.orderType === 'COUNTER');
+  const digitalVolume = digitalOrders.reduce((sum, o) => sum + (o.grandTotal || 0), 0) / 100;
 
   return (
     <div className="p-8 sm:p-10 max-w-[1400px] mx-auto space-y-8 font-sans">
@@ -51,15 +55,15 @@ export default function QrAndDigitalSectionPage() {
         </div>
         <div className="stat-card">
           <div className="text-[14px] text-secondary font-medium">QR Scans Today</div>
-          <div className="text-[28px] font-semibold text-success mt-2 leading-none">148</div>
+          <div className="text-[28px] font-semibold text-success mt-2 leading-none">{digitalOrders.length}</div>
         </div>
         <div className="stat-card">
           <div className="text-[14px] text-secondary font-medium">Digital Orders Placed</div>
-          <div className="text-[28px] font-semibold text-primary mt-2 leading-none">32</div>
+          <div className="text-[28px] font-semibold text-primary mt-2 leading-none">{digitalOrders.length}</div>
         </div>
         <div className="stat-card">
           <div className="text-[14px] text-secondary font-medium">Scan-to-Pay Volume</div>
-          <div className="text-[28px] font-semibold text-info mt-2 leading-none">₹24,800</div>
+          <div className="text-[28px] font-semibold text-info mt-2 leading-none">{currencySymbol}{digitalVolume.toFixed(2)}</div>
         </div>
       </div>
 

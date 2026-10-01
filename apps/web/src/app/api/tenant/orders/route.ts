@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const tenantId = searchParams.get('tenantId') || 'tenant-spice-garden';
+    const tenantId = searchParams.get('tenantId');
+    if (!tenantId) {
+      return NextResponse.json({ success: true, orders: [] });
+    }
 
     const orders = await prisma.order.findMany({
       where: { tenantId },
@@ -46,7 +51,63 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'tenantId is required.' }, { status: 400 });
     }
 
-    const orderNumber = `ORD-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderCount = await prisma.order.count({ where: { tenantId } });
+    const orderNumber = `ORD-${String(orderCount + 1).padStart(4, '0')}`;
+
+    // Ensure all items reference valid MenuItem IDs for this tenant
+    const processedItems = await Promise.all(
+      items.map(async (item: any) => {
+        let validMenuItemId = item.menuItemId || item.id;
+        let menuItem = null;
+        if (validMenuItemId) {
+          menuItem = await prisma.menuItem.findFirst({
+            where: { id: validMenuItemId, tenantId },
+          });
+        }
+        if (!menuItem) {
+          // Check if any menuItem exists for this tenant
+          menuItem = await prisma.menuItem.findFirst({
+            where: { tenantId },
+          });
+          if (!menuItem) {
+            let category = await prisma.category.findFirst({ where: { tenantId } });
+            if (!category) {
+              category = await prisma.category.create({
+                data: {
+                  tenantId,
+                  name: 'General',
+                },
+              });
+            }
+            menuItem = await prisma.menuItem.create({
+              data: {
+                tenantId,
+                categoryId: category.id,
+                name: item.name || item.itemName || 'Custom Item',
+                basePrice: Math.round(Number(item.price || item.unitPrice || 100)),
+                foodType: 'VEG',
+              },
+            });
+          }
+        }
+
+        const unitPrice = Math.round(Number(item.price || item.unitPrice || menuItem.basePrice));
+        const quantity = Number(item.quantity) || 1;
+        const subtotal = Math.round(Number(item.subtotal || (quantity * unitPrice)));
+
+        return {
+          menuItemId: menuItem.id,
+          itemName: item.name || item.itemName || menuItem.name,
+          quantity,
+          unitPrice,
+          subtotal,
+          notes: item.notes || null,
+          status: 'PLACED' as const,
+          addedByWorkerId: createdByWorkerId || 'usr-worker-01',
+          addedByWorkerName: createdByWorkerName || 'Server',
+        };
+      })
+    );
 
     const order = await prisma.order.create({
       data: {
@@ -64,17 +125,7 @@ export async function POST(req: NextRequest) {
         createdByWorkerName: createdByWorkerName || 'Server',
         deviceId: deviceId || 'dev-terminal-01',
         items: {
-          create: items.map((item: any) => ({
-            menuItemId: item.menuItemId || item.id || 'm-item-generic',
-            itemName: item.name || item.itemName || 'Item',
-            quantity: Number(item.quantity) || 1,
-            unitPrice: Math.round(Number(item.price || item.unitPrice || 0)),
-            subtotal: Math.round(Number(item.subtotal || (item.quantity * (item.price || item.unitPrice || 0)))),
-            notes: item.notes || null,
-            status: 'PLACED',
-            addedByWorkerId: createdByWorkerId || 'usr-worker-01',
-            addedByWorkerName: createdByWorkerName || 'Server',
-          })),
+          create: processedItems,
         },
       },
       include: {
@@ -94,6 +145,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, order });
   } catch (error: any) {
     console.error('Order creation error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { orderId, status } = body;
+
+    if (!orderId || !status) {
+      return NextResponse.json({ error: 'orderId and status are required' }, { status: 400 });
+    }
+
+    const order = await prisma.order.update({
+      where: { id: orderId },
+      data: { status: status as any },
+      include: { items: true, table: true },
+    });
+
+    if (order.tableId && (status === 'COMPLETED' || status === 'CANCELLED')) {
+      const remainingOrders = await prisma.order.count({
+        where: {
+          tableId: order.tableId,
+          status: { in: ['PLACED', 'PREPARING', 'READY', 'SERVED'] },
+        },
+      });
+      if (remainingOrders === 0) {
+        await prisma.table.update({
+          where: { id: order.tableId },
+          data: { status: 'AVAILABLE' },
+        }).catch(() => {});
+      }
+    }
+
+    return NextResponse.json({ success: true, order });
+  } catch (error: any) {
+    console.error('Order status update error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

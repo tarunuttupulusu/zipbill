@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useApp } from '@/lib/state';
 import {
@@ -21,6 +21,12 @@ import {
   AlertCircle,
   Loader2,
   FileText,
+  Camera,
+  CheckSquare,
+  Square,
+  X,
+  Layers,
+  UploadCloud,
 } from 'lucide-react';
 
 const MENU_TABS = [
@@ -33,15 +39,25 @@ const MENU_TABS = [
   { id: 'pricing', name: 'Pricing' },
   { id: 'availability', name: 'Availability' },
   { id: 'images', name: 'Menu Images' },
-  { id: 'ai_import', name: 'AI Menu Import' },
+  { id: 'ai_import', name: 'AI Menu Scan' },
   { id: 'qr', name: 'QR Menu' },
 ];
 
-export default function MenuManagementSectionPage() {
+interface ApprovalItem {
+  id: string;
+  selected: boolean;
+  name: string;
+  category: string;
+  price: number;
+  foodType: 'VEG' | 'NON_VEG';
+  description: string;
+}
+
+function MenuManagementContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'overview';
   const [activeTab, setActiveTab] = useState(initialTab);
-  const { categories, setCategories, menuItems, setMenuItems, profile } = useApp();
+  const { categories, setCategories, menuItems, setMenuItems, profile, session, currentTenant, refreshTenantData } = useApp();
   const [search, setSearch] = useState('');
 
   // Add Item State
@@ -51,46 +67,78 @@ export default function MenuManagementSectionPage() {
   const [basePrice, setBasePrice] = useState('');
   const [foodType, setFoodType] = useState('VEG');
 
-  // AI OCR State
-  const [ocrMode, setOcrMode] = useState<'text' | 'image'>('text');
-  const [rawMenuText, setRawMenuText] = useState(
-    `STARTERS & TANDOOR:
-Paneer Tikka - ₹280 (Chargrilled cottage cheese with bell peppers) [VEG]
-Chicken Malai Tikka - ₹340 (Creamy cashew marinated chicken kebabs) [NON-VEG]
-Crispy Corn Salt & Pepper - ₹220 [VEG]
-
-BIRYANI SPECIALS:
-Hyderabadi Chicken Dum Biryani - ₹320 (Slow cooked basmati with fragrant spices) [NON-VEG]
-Lucknowi Mutton Biryani - ₹440 [NON-VEG]
-Subz Dum Biryani - ₹260 [VEG]
-
-BEVERAGES:
-Fresh Lime Soda - ₹90
-Masala Buttermilk - ₹70`
-  );
+  // AI OCR State (Camera, Upload, Text & Interactive Approval)
+  const [rawMenuText, setRawMenuText] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string | null>(null);
+  const [imageMimeType, setImageMimeType] = useState<string>('image/jpeg');
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [extractedData, setExtractedData] = useState<any | null>(null);
+  const [approvalList, setApprovalList] = useState<ApprovalItem[]>([]);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
 
-  const filteredItems = menuItems.filter(
-    (item) =>
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+
+  const filteredItems = menuItems
+    .filter((item) =>
       item.name.toLowerCase().includes(search.toLowerCase())
-  );
+    )
+    .sort((a, b) => {
+      const catA = categories.find((c) => c.id === a.categoryId);
+      const catB = categories.find((c) => c.id === b.categoryId);
+      const rankA = catA?.sortOrder ?? 999;
+      const rankB = catB?.sortOrder ?? 999;
+      if (rankA !== rankB) return rankA - rankB;
+      if ((a.sortOrder || 0) !== (b.sortOrder || 0)) {
+        return (a.sortOrder || 0) - (b.sortOrder || 0);
+      }
+      return a.basePrice - b.basePrice;
+    });
+
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImageFileName(file.name);
+    setImageMimeType(file.type || 'image/jpeg');
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      setSelectedImage(result);
+      setOcrError(null);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleRunGeminiOCR = async () => {
     setIsExtracting(true);
     setOcrError(null);
     setExtractedData(null);
     setImportSuccess(null);
+    setApprovalList([]);
 
     try {
+      const payload: any = {};
+      if (selectedImage) {
+        payload.imageBase64 = selectedImage;
+        payload.mimeType = imageMimeType;
+      }
+      if (rawMenuText.trim()) {
+        payload.menuText = rawMenuText.trim();
+      }
+
+      if (!payload.imageBase64 && !payload.menuText) {
+        throw new Error('Please snap a photo, upload an image, or paste menu text to scan.');
+      }
+
       const res = await fetch('/api/ai/menu-ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          menuText: rawMenuText,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
@@ -99,6 +147,30 @@ Masala Buttermilk - ₹70`
       }
 
       setExtractedData(json.data);
+
+      // Convert extracted categories & dishes into interactive approval list
+      const items: ApprovalItem[] = [];
+      if (json.data?.categories) {
+        json.data.categories.forEach((cat: any, catIdx: number) => {
+          (cat.items || []).forEach((dish: any, dishIdx: number) => {
+            items.push({
+              id: `ocr-${catIdx}-${dishIdx}-${Date.now()}`,
+              selected: true,
+              name: dish.name || 'Dish Item',
+              category: cat.name || 'General',
+              price: Number(dish.price) || 100,
+              foodType: dish.foodType === 'NON_VEG' ? 'NON_VEG' : 'VEG',
+              description: dish.description || '',
+            });
+          });
+        });
+      }
+
+      if (items.length === 0) {
+        throw new Error('Gemini could not detect items clearly. Please ensure the menu photo or text is legible.');
+      }
+
+      setApprovalList(items);
     } catch (err: any) {
       console.error(err);
       setOcrError(err.message || 'Failed to extract menu using Gemini AI.');
@@ -107,21 +179,85 @@ Masala Buttermilk - ₹70`
     }
   };
 
-  const handleImportExtractedDishes = () => {
-    if (!extractedData || !extractedData.categories) return;
+  const toggleApprovalItem = (id: string) => {
+    setApprovalList((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, selected: !item.selected } : item))
+    );
+  };
 
-    let count = 0;
-    extractedData.categories.forEach((cat: any) => {
-      if (cat.items) count += cat.items.length;
-    });
+  const updateApprovalItem = (id: string, field: keyof ApprovalItem, value: any) => {
+    setApprovalList((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
 
-    setImportSuccess(`Successfully imported ${count} dishes across ${extractedData.categories.length} categories into your catalog!`);
-    setExtractedData(null);
+  const deleteApprovalItem = (id: string) => {
+    setApprovalList((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const selectAllApprovalItems = (selected: boolean) => {
+    setApprovalList((prev) => prev.map((item) => ({ ...item, selected })));
+  };
+
+  const handleApproveAndSave = async () => {
+    const activeTenantId = profile?.tenantId || session?.tenantId || currentTenant?.id || '';
+    const selectedItems = approvalList.filter((item) => item.selected);
+
+    if (selectedItems.length === 0) {
+      setOcrError('Please select at least one dish to import.');
+      return;
+    }
+    if (!activeTenantId) {
+      setOcrError('Active restaurant tenant not resolved.');
+      return;
+    }
+
+    setIsImporting(true);
+    setOcrError(null);
+
+    try {
+      const res = await fetch('/api/tenant/menu', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: activeTenantId,
+          items: selectedItems.map((it) => ({
+            name: it.name,
+            categoryName: it.category,
+            price: it.price,
+            foodType: it.foodType,
+            description: it.description,
+          })),
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || 'Failed to save menu items to database.');
+      }
+
+      await refreshTenantData();
+      setImportSuccess(`Successfully approved and added ${selectedItems.length} dishes to your menu!`);
+      setApprovalList([]);
+      setExtractedData(null);
+      setSelectedImage(null);
+      setImageFileName(null);
+      setRawMenuText('');
+
+      // Auto-switch to Menu Items tab so user can see all sections updated!
+      setActiveTab('items');
+    } catch (err: any) {
+      console.error(err);
+      setOcrError(err.message || 'Failed to import approved dishes.');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !basePrice) return;
+    const activeTenantId = profile.tenantId || session.tenantId || currentTenant?.id || '';
 
     let targetCat = categories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase());
     let categoryId = targetCat?.id || `cat-${Date.now()}`;
@@ -129,7 +265,7 @@ Masala Buttermilk - ₹70`
     if (!targetCat) {
       targetCat = {
         id: categoryId,
-        tenantId: profile.tenantId,
+        tenantId: activeTenantId,
         name: categoryName,
         sortOrder: categories.length + 1,
         isActive: true,
@@ -139,7 +275,7 @@ Masala Buttermilk - ₹70`
 
     const newItem: any = {
       id: `item-${Date.now()}`,
-      tenantId: profile.tenantId,
+      tenantId: activeTenantId,
       categoryId,
       name,
       basePrice: Math.round(Number(basePrice) * 100),
@@ -151,17 +287,20 @@ Masala Buttermilk - ₹70`
     setMenuItems([...menuItems, newItem]);
 
     try {
-      await fetch('/api/tenant/menu', {
+      const res = await fetch('/api/tenant/menu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenantId: profile.tenantId,
+          tenantId: activeTenantId,
           name,
           categoryName,
           basePrice,
           foodType,
         }),
       });
+      if (res.ok) {
+        refreshTenantData().catch(() => {});
+      }
     } catch {}
 
     setName('');
@@ -333,7 +472,9 @@ Masala Buttermilk - ₹70`
       {/* Tab 2: Categories */}
       {activeTab === 'categories' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          {categories.map((c) => (
+          {[...categories]
+            .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+            .map((c) => (
             <div key={c.id} className="card p-5 space-y-2 border-border hover:border-primary/40 transition">
               <div className="flex items-center justify-between">
                 <Tag className="w-5 h-5 text-primary" />
@@ -348,22 +489,25 @@ Masala Buttermilk - ₹70`
         </div>
       )}
 
-      {/* Tab 8: AI Menu Import (Gemini AI Powered) */}
+      {/* Tab 8: AI Menu Scan & OCR (Gemini AI Powered) */}
       {activeTab === 'ai_import' && (
-        <div className="card space-y-6 max-w-3xl mx-auto p-8">
+        <div className="card space-y-6 max-w-4xl mx-auto p-6 sm:p-8">
+          {/* Header */}
           <div className="text-center space-y-2">
             <div className="w-14 h-14 rounded-2xl bg-primary-soft text-primary flex items-center justify-center mx-auto shadow-sm">
               <Sparkles className="w-7 h-7 stroke-[2]" />
             </div>
-            <h3 className="font-bold text-xl text-heading">Google Gemini AI Menu OCR & Extractor</h3>
-            <p className="text-xs text-secondary max-w-md mx-auto">
-              Scan paper menus, printed photos, or raw unstructured menu lists to automatically parse categories, dish descriptions, prices, and dietary tags.
+            <h3 className="font-bold text-xl sm:text-2xl text-heading">
+              Google Gemini AI Menu Card Scanner
+            </h3>
+            <p className="text-xs sm:text-sm text-secondary max-w-lg mx-auto">
+              Snap a photo with your mobile camera or upload a menu image. Gemini AI automatically parses all dishes, categories, prices, and dietary tags into an approval table.
             </p>
           </div>
 
           {/* Success Banner */}
           {importSuccess && (
-            <div className="p-3.5 bg-success-bg text-success border border-emerald-300 rounded-xl text-xs flex items-center space-x-2 font-medium">
+            <div className="p-3.5 bg-success-bg text-success border border-emerald-300 rounded-xl text-xs flex items-center space-x-2 font-medium animate-in fade-in">
               <Check className="w-4 h-4 stroke-[3] flex-shrink-0" />
               <span>{importSuccess}</span>
             </div>
@@ -371,17 +515,116 @@ Masala Buttermilk - ₹70`
 
           {/* Error Banner */}
           {ocrError && (
-            <div className="p-3.5 bg-danger-bg text-danger border border-rose-300 rounded-xl text-xs flex items-center space-x-2 font-medium">
+            <div className="p-3.5 bg-danger-bg text-danger border border-rose-300 rounded-xl text-xs flex items-center space-x-2 font-medium animate-in fade-in">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{ocrError}</span>
             </div>
           )}
 
-          {/* OCR Input Box */}
-          <div className="space-y-3">
+          {/* Capture / Upload Options */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Camera Button for Mobile/Desktop */}
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className="p-4 rounded-xl border-2 border-dashed border-primary/40 hover:border-primary bg-primary-soft/30 hover:bg-primary-soft/50 transition flex flex-col items-center justify-center space-y-2 text-center group cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
+                <Camera className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="font-semibold text-sm text-heading block">
+                  Take Photo with Camera
+                </span>
+                <span className="text-xs text-secondary">
+                  Tap to capture paper menu card directly
+                </span>
+              </div>
+            </button>
+
+            {/* Gallery / File Upload Button */}
+            <button
+              type="button"
+              onClick={() => galleryInputRef.current?.click()}
+              className="p-4 rounded-xl border-2 border-dashed border-border hover:border-primary/60 bg-surfaceMuted/40 hover:bg-surfaceMuted transition flex flex-col items-center justify-center space-y-2 text-center group cursor-pointer"
+            >
+              <div className="w-10 h-10 rounded-full bg-surface border border-border text-secondary flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
+                <UploadCloud className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="font-semibold text-sm text-heading block">
+                  Upload Menu Image
+                </span>
+                <span className="text-xs text-secondary">
+                  Select JPG, PNG, or photo from gallery
+                </span>
+              </div>
+            </button>
+
+            {/* Hidden Inputs */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleImageFile}
+            />
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageFile}
+            />
+          </div>
+
+          {/* Selected Image Preview (if present) */}
+          {selectedImage && (
+            <div className="p-4 bg-surfaceMuted rounded-xl border border-border space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <ImageIcon className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-xs text-heading">
+                    {imageFileName || 'Captured Menu Photo'}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="text-xs text-primary hover:underline font-semibold"
+                  >
+                    Retake
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedImage(null);
+                      setImageFileName(null);
+                    }}
+                    className="text-xs text-danger hover:underline font-semibold"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative max-h-56 overflow-hidden rounded-lg border border-borderLight flex items-center justify-center bg-black/5">
+                <img
+                  src={selectedImage}
+                  alt="Menu Card Preview"
+                  className="max-h-56 w-auto object-contain rounded"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Alternative: Raw Text Input */}
+          <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <label className="font-semibold text-heading">
-                Paste Printed Menu Text or OCR Transcript:
+              <label className="font-medium text-secondary">
+                Or paste printed menu text / OCR transcript:
               </label>
               <button
                 type="button"
@@ -393,101 +636,229 @@ Chicken Malai Tikka - ₹340 [NON-VEG]
 MAINS:
 Hyderabadi Chicken Dum Biryani - ₹320 [NON-VEG]
 Butter Garlic Naan - ₹75 [VEG]
+Dal Makhani - ₹220 [VEG]
 
 DESSERTS:
 Gulab Jamun with Rabdi - ₹140 [VEG]`)
                 }
                 className="text-primary hover:underline font-semibold"
               >
-                Load Sample Indian Menu
+                Load Sample Menu
               </button>
             </div>
 
             <textarea
-              rows={8}
+              rows={4}
               value={rawMenuText}
               onChange={(e) => setRawMenuText(e.target.value)}
-              placeholder="Paste raw menu items, prices, and sections here..."
+              placeholder="Paste dish names, prices, and categories if you don't have a photo..."
               className="input-field font-mono text-xs leading-relaxed"
             />
           </div>
 
-          <div className="flex items-center justify-between pt-2">
+          {/* Trigger Scan Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-borderLight">
             <span className="text-[11px] text-muted flex items-center space-x-1.5">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
-              <span>Engine: Google Gemini 1.5 Flash</span>
+              <span>Multimodal Vision: Google Gemini 2.5 Flash</span>
             </span>
 
             <button
               type="button"
-              disabled={isExtracting || !rawMenuText.trim()}
+              disabled={isExtracting || (!selectedImage && !rawMenuText.trim())}
               onClick={handleRunGeminiOCR}
-              className="btn-primary text-xs py-2.5 px-6 flex items-center space-x-2"
+              className="btn-primary text-xs py-2.5 px-6 flex items-center justify-center space-x-2"
             >
               {isExtracting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Processing with Gemini AI...</span>
+                  <span>Scanning &amp; Detecting Items with Gemini...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Extract Menu Structure</span>
+                  <span>Scan &amp; Detect Menu Items</span>
                 </>
               )}
             </button>
           </div>
 
-          {/* Extracted JSON Preview & Import Action */}
-          {extractedData && extractedData.categories && (
-            <div className="pt-6 border-t border-borderLight space-y-4 text-left">
-              <div className="flex items-center justify-between">
+          {/* INTERACTIVE APPROVAL & REVIEW TABLE */}
+          {approvalList.length > 0 && (
+            <div className="pt-6 border-t-2 border-primary/20 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-primary-soft/40 p-3.5 rounded-xl border border-primary/20">
                 <div>
-                  <h4 className="font-semibold text-sm text-heading">Gemini Extraction Preview</h4>
-                  <p className="text-xs text-muted">
-                    Found {extractedData.categories.length} categories with structured dishes
+                  <h4 className="font-bold text-sm text-heading flex items-center space-x-2">
+                    <span>Menu Review &amp; Approval Table</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-primary text-white">
+                      {approvalList.filter((i) => i.selected).length} / {approvalList.length} Selected
+                    </span>
+                  </h4>
+                  <p className="text-xs text-secondary mt-0.5">
+                    Review and edit dish names, categories, and prices detected by Gemini before approving.
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleImportExtractedDishes}
-                  className="btn-primary text-xs py-2 px-4 flex items-center space-x-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Import All to Catalog</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => selectAllApprovalItems(true)}
+                    className="text-xs text-primary font-semibold hover:underline"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-border">•</span>
+                  <button
+                    type="button"
+                    onClick={() => selectAllApprovalItems(false)}
+                    className="text-xs text-secondary font-semibold hover:underline"
+                  >
+                    Deselect All
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isImporting || approvalList.filter((i) => i.selected).length === 0}
+                    onClick={handleApproveAndSave}
+                    className="btn-primary text-xs py-2 px-4 flex items-center space-x-1.5 shadow-md ml-2"
+                  >
+                    {isImporting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Approve &amp; Add ({approvalList.filter((i) => i.selected).length})</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                {extractedData.categories.map((cat: any, idx: number) => (
-                  <div key={idx} className="p-3.5 bg-surfaceMuted rounded-xl border border-borderLight space-y-2">
-                    <span className="font-bold text-xs text-primary uppercase tracking-wider block">
-                      📁 {cat.name} ({cat.items?.length || 0} items)
-                    </span>
+              {/* Items Table / Cards */}
+              <div className="overflow-x-auto border border-border rounded-xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-surfaceMuted text-muted uppercase font-semibold border-b border-border text-[11px]">
+                    <tr>
+                      <th className="p-3 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          checked={approvalList.length > 0 && approvalList.every((i) => i.selected)}
+                          onChange={(e) => selectAllApprovalItems(e.target.checked)}
+                          className="rounded border-border text-primary cursor-pointer"
+                        />
+                      </th>
+                      <th className="p-3">Dish / Item Name</th>
+                      <th className="p-3">Category</th>
+                      <th className="p-3 w-28">Price (₹)</th>
+                      <th className="p-3 w-28">Dietary</th>
+                      <th className="p-3 text-right w-12">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-borderLight bg-surface">
+                    {approvalList.map((item) => (
+                      <tr
+                        key={item.id}
+                        className={`transition ${item.selected ? 'hover:bg-primary-soft/10' : 'opacity-50 bg-surfaceMuted/30'}`}
+                      >
+                        <td className="p-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={item.selected}
+                            onChange={() => toggleApprovalItem(item.id)}
+                            className="rounded border-border text-primary cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="text"
+                            value={item.name}
+                            onChange={(e) => updateApprovalItem(item.id, 'name', e.target.value)}
+                            className="w-full bg-transparent font-semibold text-heading border-b border-transparent focus:border-primary focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-xs"
+                          />
+                          {item.description && (
+                            <input
+                              type="text"
+                              value={item.description}
+                              onChange={(e) => updateApprovalItem(item.id, 'description', e.target.value)}
+                              placeholder="Description"
+                              className="w-full bg-transparent text-[11px] text-muted border-b border-transparent focus:border-primary focus:bg-white focus:outline-hidden px-1 rounded mt-0.5"
+                            />
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <input
+                            type="text"
+                            value={item.category}
+                            onChange={(e) => updateApprovalItem(item.id, 'category', e.target.value)}
+                            className="w-full bg-transparent font-medium text-secondary border-b border-transparent focus:border-primary focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-xs"
+                          />
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center space-x-1">
+                            <span className="text-secondary font-semibold">₹</span>
+                            <input
+                              type="number"
+                              value={item.price}
+                              onChange={(e) => updateApprovalItem(item.id, 'price', Number(e.target.value))}
+                              className="w-20 bg-transparent font-bold text-heading border-b border-transparent focus:border-primary focus:bg-white focus:outline-hidden px-1 py-0.5 rounded text-xs font-mono"
+                            />
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateApprovalItem(item.id, 'foodType', item.foodType === 'VEG' ? 'NON_VEG' : 'VEG')
+                            }
+                            className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition ${
+                              item.foodType === 'NON_VEG'
+                                ? 'bg-rose-100 text-rose-800 hover:bg-rose-200'
+                                : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            }`}
+                          >
+                            {item.foodType}
+                          </button>
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => deleteApprovalItem(item.id)}
+                            className="p-1 text-placeholder hover:text-danger rounded-lg transition"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-                    <div className="divide-y divide-borderLight text-xs">
-                      {cat.items?.map((dish: any, dishIdx: number) => (
-                        <div key={dishIdx} className="py-2 flex items-center justify-between">
-                          <div>
-                            <span className="font-semibold text-heading">{dish.name}</span>
-                            {dish.description && (
-                              <p className="text-[11px] text-muted">{dish.description}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              dish.foodType === 'NON_VEG' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                            }`}>
-                              {dish.foodType}
-                            </span>
-                            <span className="font-bold text-heading text-xs">₹{dish.price}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+              {/* Bottom Sticky / Responsive Action Button */}
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  disabled={isImporting || approvalList.filter((i) => i.selected).length === 0}
+                  onClick={handleApproveAndSave}
+                  className="btn-primary w-full sm:w-auto text-sm py-3 px-8 flex items-center justify-center space-x-2 shadow-lg"
+                >
+                  {isImporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving Items to Menu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>
+                        Approve &amp; Save {approvalList.filter((i) => i.selected).length} Dishes to Menu Catalog
+                      </span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
@@ -605,5 +976,13 @@ Gulab Jamun with Rabdi - ₹140 [VEG]`)
         </div>
       )}
     </div>
+  );
+}
+
+export default function MenuManagementSectionPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-neutral-400">Loading menu management...</div>}>
+      <MenuManagementContent />
+    </Suspense>
   );
 }

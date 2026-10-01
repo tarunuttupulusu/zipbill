@@ -18,7 +18,7 @@ import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { session, setSession, setProfile, setBusinessType } = useApp();
+  const { session, setSession, setProfile, setBusinessType, setCurrentTenant } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,10 +30,18 @@ export default function LoginPage() {
     if (typeof window === 'undefined') return;
     try {
       const savedSession = localStorage.getItem('saas_active_session');
+      const savedTenant = localStorage.getItem('saas_active_tenant');
       if (savedSession) {
         const parsed = JSON.parse(savedSession);
+        let slug = '';
+        if (savedTenant) {
+          try {
+            const parsedTenant = JSON.parse(savedTenant);
+            slug = parsedTenant.slug || '';
+          } catch {}
+        }
         if (parsed?.userId && parsed?.email && parsed.userId !== 'usr-owner-01') {
-          router.push('/dashboard');
+          router.push(slug ? `/${slug}/dashboard` : '/dashboard');
         }
       }
     } catch {
@@ -94,6 +102,13 @@ export default function LoginPage() {
         setBusinessType(data.tenant.businessType);
       }
 
+      if (data.tenant) {
+        setCurrentTenant(data.tenant);
+        try {
+          localStorage.setItem('saas_active_tenant', JSON.stringify(data.tenant));
+        } catch {}
+      }
+
       setSession({
         ...session,
         tenantId: data.user.tenantId || data.tenant?.id || session.tenantId,
@@ -106,6 +121,8 @@ export default function LoginPage() {
 
       if (data.redirect) {
         router.push(data.redirect);
+      } else if (data.tenant?.slug) {
+        router.push(`/${data.tenant.slug}/dashboard`);
       } else {
         router.push('/dashboard');
       }

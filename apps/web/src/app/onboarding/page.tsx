@@ -42,7 +42,7 @@ import { BusinessType, ModuleToken } from '@platform/types';
 
 export default function CompleteOnboardingWizard() {
   const router = useRouter();
-  const { profile, setProfile, setBusinessType, enabledModules, toggleModule } = useApp();
+  const { profile, setProfile, setBusinessType, enabledModules, toggleModule, currentTenant } = useApp();
 
   const [step, setStep] = useState<number>(1);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -53,12 +53,12 @@ export default function CompleteOnboardingWizard() {
   const [bType, setBType] = useState<BusinessType>('RESTAURANT');
 
   // STEP 02: Restaurant Information
-  const [name, setName] = useState<string>(profile.businessName || 'The Spice Symphony');
-  const [phone, setPhone] = useState<string>(profile.phone || '+91 98450 11223');
-  const [email, setEmail] = useState<string>(profile.email || 'manager@spicesymphony.com');
-  const [address, setAddress] = useState<string>(profile.address || '42, MG Road, Central District');
-  const [city, setCity] = useState<string>(profile.city || 'Bengaluru');
-  const [state, setState] = useState<string>('Karnataka');
+  const [name, setName] = useState<string>(profile.businessName || '');
+  const [phone, setPhone] = useState<string>(profile.phone || '');
+  const [email, setEmail] = useState<string>(profile.email || '');
+  const [address, setAddress] = useState<string>(profile.address || '');
+  const [city, setCity] = useState<string>(profile.city || '');
+  const [state, setState] = useState<string>(profile.state || '');
   const [country, setCountry] = useState<string>('India');
   const [currency, setCurrency] = useState<string>('INR');
   const [timezone, setTimezone] = useState<string>('Asia/Kolkata');
@@ -97,45 +97,21 @@ export default function CompleteOnboardingWizard() {
 
   // STEP 06: Table Configuration
   const [usesTables, setUsesTables] = useState<boolean>(true);
-  const [tableCount, setTableCount] = useState<number>(12);
-  const [tableSections, setTableSections] = useState<string[]>([
-    'AC Main Dining',
-    'Garden Terrace',
-  ]);
+  const [tableCount, setTableCount] = useState<number>(0);
+  const [tableSections, setTableSections] = useState<string[]>([]);
   const [newSectionName, setNewSectionName] = useState<string>('');
 
   // STEP 07: Staff Configuration
-  const [hasEmployees, setHasEmployees] = useState<boolean>(true);
-  const [staffList, setStaffList] = useState<Array<{ name: string; role: string; phone: string }>>([
-    { name: 'Arun Kumar', role: 'MANAGER', phone: '+91 98765 43201' },
-    { name: 'Sunil Rao', role: 'CASHIER', phone: '+91 98765 43202' },
-    { name: 'Chef Suresh', role: 'KITCHEN', phone: '+91 98765 43203' },
-  ]);
+  const [hasEmployees, setHasEmployees] = useState<boolean>(false);
+  const [staffList, setStaffList] = useState<Array<{ name: string; role: string; phone: string }>>([]);
   const [newStaffName, setNewStaffName] = useState<string>('');
   const [newStaffRole, setNewStaffRole] = useState<string>('WAITER');
 
   // STEP 08: Menu Configuration (Manual or Gemini AI)
   const [menuMode, setMenuMode] = useState<'MANUAL' | 'AI'>('AI');
-  const [aiMenuRawText, setAiMenuRawText] = useState<string>(
-    'Paneer Butter Masala - ₹280\nDal Makhani - ₹220\nButter Naan - ₹45\nChicken Biryani - ₹340\nCold Coffee - ₹120'
-  );
+  const [aiMenuRawText, setAiMenuRawText] = useState<string>('');
   const [aiParsing, setAiParsing] = useState<boolean>(false);
-  const [aiParsedCategories, setAiParsedCategories] = useState<any[]>([
-    {
-      category: 'Main Course',
-      items: [
-        { name: 'Paneer Butter Masala', price: 280, isVeg: true, description: 'Rich tomato cashew gravy' },
-        { name: 'Chicken Biryani', price: 340, isVeg: false, description: 'Aromatic basmati rice with spices' },
-      ],
-    },
-    {
-      category: 'Breads & Beverages',
-      items: [
-        { name: 'Butter Naan', price: 45, isVeg: true, description: 'Tandoor baked garlic butter naan' },
-        { name: 'Cold Coffee', price: 120, isVeg: true, description: 'Chilled brew with milk' },
-      ],
-    },
-  ]);
+  const [aiParsedCategories, setAiParsedCategories] = useState<any[]>([]);
 
   // STEP 09: Billing Configuration
   const [taxRate, setTaxRate] = useState<number>(5);
@@ -311,7 +287,11 @@ export default function CompleteOnboardingWizard() {
         onboardingCompleted: true,
       });
 
-      router.push('/dashboard');
+      if (currentTenant?.slug) {
+        router.push(`/${currentTenant.slug}/dashboard`);
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: any) {
       console.error('Onboarding final submit error:', err);
       alert(err.message || 'Failed to save configuration to database.');
@@ -800,12 +780,10 @@ export default function CompleteOnboardingWizard() {
                     <select
                       value={newStaffRole}
                       onChange={(e) => setNewStaffRole(e.target.value)}
-                      className="input-field text-xs"
+                      className="input-field text-xs font-semibold"
                     >
-                      <option value="MANAGER">Manager</option>
-                      <option value="CASHIER">Cashier</option>
-                      <option value="WAITER">Waiter</option>
-                      <option value="KITCHEN">Kitchen Chef</option>
+                      <option value="WAITER">🍽️ Waiter (Floor & POS)</option>
+                      <option value="KITCHEN">👨‍🍳 Kitchen Staff (KDS)</option>
                     </select>
                   </div>
                   <button

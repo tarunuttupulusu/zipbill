@@ -19,9 +19,9 @@ export async function POST(req: NextRequest) {
       logoUrl,
       services = [],
       modules = [],
-      hasTables = true,
-      tableCount = 10,
-      tableSections = ['Main Dining', 'Patio / Balcony'],
+      hasTables = false,
+      tableCount = 0,
+      tableSections = [],
       hasEmployees = false,
       employees = [],
       billingConfig = {
