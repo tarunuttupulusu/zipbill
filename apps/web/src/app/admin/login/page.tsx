@@ -14,6 +14,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { useApp } from '@/lib/state';
+import { ZipBillLogo } from '@/components/brand/ZipBillLogo';
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -112,16 +113,19 @@ export default function AdminLoginPage() {
     <div className="min-h-screen bg-background text-main flex flex-col items-center justify-center py-12 px-4 sm:px-6 font-sans">
       {/* HEADER / BADGE */}
       <div className="text-center mb-6 max-w-md w-full">
-        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-xs font-semibold text-primary mb-4 shadow-sm">
+        <Link href="/" className="inline-flex flex-col items-center space-y-2 mb-4 hover:opacity-95 transition">
+          <ZipBillLogo size="lg" variant="full" />
+        </Link>
+        <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-xs font-semibold text-primary mb-3 shadow-sm">
           <ShieldAlert className="w-3.5 h-3.5 text-primary" />
-          <span>SaaS Platform Control Plane</span>
+          <span>ZipBill Platform Control Plane</span>
         </div>
 
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-heading tracking-tight">
-          SaaS Admin Portal
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-heading tracking-tight">
+          Super Admin Gateway
         </h1>
-        <p className="mt-1.5 text-sm text-secondary font-medium">
-          Authorized administrators only
+        <p className="mt-1 text-xs text-secondary font-medium">
+          Multi-tenant platform infrastructure & master controls
         </p>
       </div>
 

@@ -1,0 +1,298 @@
+import { prisma } from '@platform/database';
+
+export async function seedTenantStarterData(tenantId: string, businessType: string = 'RESTAURANT') {
+  try {
+    // 1. Dining Tables
+    const existingTableCount = await prisma.table.count({ where: { tenantId } });
+    if (existingTableCount === 0) {
+      const defaultTables = [
+        { tableNumber: '1', tableName: 'Table 1', capacity: 4, status: 'AVAILABLE' as const, sortOrder: 1 },
+        { tableNumber: '2', tableName: 'Table 2', capacity: 2, status: 'OCCUPIED' as const, sortOrder: 2 },
+        { tableNumber: '3', tableName: 'Table 3', capacity: 6, status: 'AVAILABLE' as const, sortOrder: 3 },
+        { tableNumber: '4', tableName: 'Table 4', capacity: 4, status: 'AVAILABLE' as const, sortOrder: 4 },
+        { tableNumber: '5', tableName: 'Table 5', capacity: 2, status: 'AVAILABLE' as const, sortOrder: 5 },
+        { tableNumber: '6', tableName: 'VIP 1', capacity: 8, status: 'RESERVED' as const, sortOrder: 6 },
+        { tableNumber: '7', tableName: 'Terrace 1', capacity: 4, status: 'AVAILABLE' as const, sortOrder: 7 },
+        { tableNumber: '8', tableName: 'Terrace 2', capacity: 4, status: 'AVAILABLE' as const, sortOrder: 8 },
+      ];
+
+      for (const t of defaultTables) {
+        await prisma.table.create({
+          data: {
+            tenantId,
+            tableNumber: t.tableNumber,
+            tableName: t.tableName,
+            capacity: t.capacity,
+            status: t.status,
+            sortOrder: t.sortOrder,
+          },
+        });
+      }
+    }
+
+    // 2. Menu Categories & Items
+    const existingCategoryCount = await prisma.category.count({ where: { tenantId } });
+    if (existingCategoryCount === 0) {
+      const starterCategories = [
+        {
+          name: 'Starters & Appetizers',
+          sortOrder: 1,
+          items: [
+            { name: 'Paneer Tikka (6 pcs)', basePrice: 28000, foodType: 'VEG' as const, description: 'Charcoal grilled cottage cheese marinated in spiced yogurt' },
+            { name: 'Crispy Corn Pepper Fry', basePrice: 22000, foodType: 'VEG' as const, description: 'Sweet corn tossed with bell peppers and crushed black pepper' },
+            { name: 'Chicken Tikka Kebab (6 pcs)', basePrice: 34000, foodType: 'NON_VEG' as const, description: 'Tender chicken marinated in royal tandoori spices' },
+            { name: 'Peri Peri Chicken Wings', basePrice: 32000, foodType: 'NON_VEG' as const, description: 'Crispy wings glazed with zesty peri-peri sauce' },
+            { name: 'Veg Spring Rolls', basePrice: 21000, foodType: 'VEG' as const, description: 'Crunchy golden rolls stuffed with seasoned wok veggies' },
+            { name: 'Garlic Butter Prawns', basePrice: 42000, foodType: 'NON_VEG' as const, description: 'Pan-seared prawns in rich garlic herb butter' },
+          ],
+        },
+        {
+          name: 'Main Course & Curries',
+          sortOrder: 2,
+          items: [
+            { name: 'Butter Chicken', basePrice: 38000, foodType: 'NON_VEG' as const, description: 'Smoked chicken morsels in silky tomato cashew gravy' },
+            { name: 'Paneer Butter Masala', basePrice: 32000, foodType: 'VEG' as const, description: 'Fresh cottage cheese cubes in aromatic makhani gravy' },
+            { name: 'Dal Makhani (Slow Cooked)', basePrice: 26000, foodType: 'VEG' as const, description: 'Black lentils slow cooked overnight with butter and cream' },
+            { name: 'Hyderabadi Chicken Dum Biryani', basePrice: 36000, foodType: 'NON_VEG' as const, description: 'Fragrant basmati rice layered with spiced chicken and saffron' },
+            { name: 'Nizami Veg Dum Biryani', basePrice: 29000, foodType: 'VEG' as const, description: 'Basmati rice infused with garden fresh vegetables and whole spices' },
+            { name: 'Mutton Rogan Josh', basePrice: 46000, foodType: 'NON_VEG' as const, description: 'Kashmiri style tender mutton braised in aromatic red gravy' },
+            { name: 'Butter Garlic Naan', basePrice: 6500, foodType: 'VEG' as const, description: 'Clay oven baked bread brushed with roasted garlic butter' },
+            { name: 'Tandoori Roti with Butter', basePrice: 3500, foodType: 'VEG' as const, description: 'Whole wheat tandoori flatbread' },
+            { name: 'Jeera Basmati Rice', basePrice: 18000, foodType: 'VEG' as const, description: 'Aromatic basmati rice tempered with cumin seeds and ghee' },
+          ],
+        },
+        {
+          name: 'Beverages & Coolers',
+          sortOrder: 3,
+          items: [
+            { name: 'Masala Chai', basePrice: 5000, foodType: 'BEVERAGE' as const, description: 'Strong Assam tea brewed with ginger and cardamom' },
+            { name: 'Filter Coffee', basePrice: 7000, foodType: 'BEVERAGE' as const, description: 'Traditional South Indian chicory filter brew' },
+            { name: 'Fresh Mint Lime Soda', basePrice: 11000, foodType: 'BEVERAGE' as const, description: 'Refreshing sparkling limeade with bruised fresh mint' },
+            { name: 'Sweet Mango Lassi', basePrice: 14000, foodType: 'BEVERAGE' as const, description: 'Creamy yogurt cooler with Alphonso mango puree' },
+            { name: 'Cold Coffee with Ice Cream', basePrice: 16000, foodType: 'BEVERAGE' as const, description: 'Blended espresso shake topped with vanilla bean ice cream' },
+            { name: 'Virgin Mojito Cooler', basePrice: 15000, foodType: 'BEVERAGE' as const, description: 'Muddled mint, lime wedges, simple syrup and crushed ice' },
+          ],
+        },
+        {
+          name: 'Desserts & Sweets',
+          sortOrder: 4,
+          items: [
+            { name: 'Gulab Jamun with Rabdi', basePrice: 16000, foodType: 'VEG' as const, description: 'Warm milk dumplings soaked in cardamom syrup with condensed milk' },
+            { name: 'Sizzling Brownie with Vanilla', basePrice: 24000, foodType: 'VEG' as const, description: 'Fudgy hot brownie served on a cast iron sizzler with hot chocolate fudge' },
+            { name: 'Kesar Pista Kulfi', basePrice: 14000, foodType: 'VEG' as const, description: 'Traditional dense Indian ice cream with saffron and roasted pistachios' },
+            { name: 'Rasmalai (2 pcs)', basePrice: 15000, foodType: 'VEG' as const, description: 'Soft paneer discs steeped in cardamom flavored clotted milk' },
+          ],
+        },
+      ];
+
+      for (const cat of starterCategories) {
+        const createdCat = await prisma.category.create({
+          data: {
+            tenantId,
+            name: cat.name,
+            sortOrder: cat.sortOrder,
+            isActive: true,
+          },
+        });
+
+        for (let i = 0; i < cat.items.length; i++) {
+          const item = cat.items[i];
+          await prisma.menuItem.create({
+            data: {
+              tenantId,
+              categoryId: createdCat.id,
+              name: item.name,
+              description: item.description,
+              basePrice: item.basePrice,
+              taxRatePercent: 5,
+              foodType: item.foodType,
+              isAvailable: true,
+              sortOrder: i + 1,
+            },
+          });
+        }
+      }
+    }
+
+    // 3. Stock & Raw Materials Inventory
+    const existingInventoryCount = await prisma.inventoryItem.count({ where: { tenantId } });
+    if (existingInventoryCount === 0) {
+      const defaultInventory = [
+        { name: 'Basmati Rice (Aged)', unit: 'kg', currentStock: 50, minAlertStock: 10, costPerUnit: 9000 },
+        { name: 'Fresh Paneer', unit: 'kg', currentStock: 15, minAlertStock: 4, costPerUnit: 26000 },
+        { name: 'Chicken Breast / Curry Cut', unit: 'kg', currentStock: 25, minAlertStock: 6, costPerUnit: 22000 },
+        { name: 'Whole Dairy Milk', unit: 'L', currentStock: 30, minAlertStock: 8, costPerUnit: 6500 },
+        { name: 'Pure Refined Cooking Oil', unit: 'L', currentStock: 40, minAlertStock: 10, costPerUnit: 14000 },
+        { name: 'Fresh Cooking Cream', unit: 'L', currentStock: 12, minAlertStock: 3, costPerUnit: 19000 },
+        { name: 'Chef Special Garam Masala', unit: 'kg', currentStock: 8, minAlertStock: 2, costPerUnit: 55000 },
+      ];
+
+      for (const inv of defaultInventory) {
+        await prisma.inventoryItem.create({
+          data: {
+            tenantId,
+            name: inv.name,
+            unit: inv.unit,
+            currentStock: inv.currentStock,
+            minAlertStock: inv.minAlertStock,
+            costPerUnit: inv.costPerUnit,
+          },
+        });
+      }
+    }
+
+    // 4. Sample Customers
+    const existingCustomerCount = await prisma.customer.count({ where: { tenantId } });
+    if (existingCustomerCount === 0) {
+      await prisma.customer.createMany({
+        data: [
+          {
+            tenantId,
+            name: 'Rahul Sharma',
+            phone: '+91 98765 43210',
+            email: 'rahul.sharma@example.com',
+            totalVisits: 3,
+            totalSpend: 245000,
+          },
+          {
+            tenantId,
+            name: 'Priya Patel',
+            phone: '+91 98123 45678',
+            email: 'priya.patel@example.com',
+            totalVisits: 1,
+            totalSpend: 84000,
+          },
+        ],
+      });
+    }
+
+    // 5. Sample Live Orders (for non-empty Dashboard, POS, Reports, and KDS)
+    const existingOrderCount = await prisma.order.count({ where: { tenantId } });
+    if (existingOrderCount === 0) {
+      const table1 = await prisma.table.findFirst({ where: { tenantId, tableNumber: '1' } });
+      const table2 = await prisma.table.findFirst({ where: { tenantId, tableNumber: '2' } });
+      const chickenBiryani = await prisma.menuItem.findFirst({ where: { tenantId, name: { contains: 'Biryani' } } });
+      const butterChicken = await prisma.menuItem.findFirst({ where: { tenantId, name: { contains: 'Butter Chicken' } } });
+      const garlicNaan = await prisma.menuItem.findFirst({ where: { tenantId, name: { contains: 'Naan' } } });
+      const mangoLassi = await prisma.menuItem.findFirst({ where: { tenantId, name: { contains: 'Lassi' } } });
+
+      const ownerUser = await prisma.user.findFirst({ where: { tenantId, roleType: 'OWNER' } });
+      const workerId = ownerUser?.id || 'usr-default';
+      const workerName = ownerUser?.fullName || 'Manager';
+
+      // Completed Order 1 (Adds real revenue and sales analytics)
+      if (chickenBiryani && mangoLassi) {
+        const order1 = await prisma.order.create({
+          data: {
+            tenantId,
+            orderNumber: 'ORD-0001',
+            orderType: 'DINE_IN',
+            tableId: table1?.id,
+            status: 'COMPLETED',
+            guestCount: 2,
+            subtotal: 50000,
+            taxAmount: 2500,
+            grandTotal: 52500,
+            createdByWorkerId: workerId,
+            createdByWorkerName: workerName,
+            deviceId: 'pos-main',
+            items: {
+              create: [
+                {
+                  menuItemId: chickenBiryani.id,
+                  itemName: chickenBiryani.name,
+                  unitPrice: chickenBiryani.basePrice,
+                  quantity: 1,
+                  subtotal: chickenBiryani.basePrice,
+                  status: 'COMPLETED',
+                  addedByWorkerId: workerId,
+                  addedByWorkerName: workerName,
+                },
+                {
+                  menuItemId: mangoLassi.id,
+                  itemName: mangoLassi.name,
+                  unitPrice: mangoLassi.basePrice,
+                  quantity: 1,
+                  subtotal: mangoLassi.basePrice,
+                  status: 'COMPLETED',
+                  addedByWorkerId: workerId,
+                  addedByWorkerName: workerName,
+                },
+              ],
+            },
+            invoice: {
+              create: {
+                tenantId,
+                invoiceNumber: 'INV-0001',
+                subtotal: 50000,
+                taxAmount: 2500,
+                grandTotal: 52500,
+                status: 'PAID',
+                paidAmount: 52500,
+                dueAmount: 0,
+                generatedByWorkerId: workerId,
+                generatedByWorkerName: workerName,
+                payments: {
+                  create: {
+                    tenantId,
+                    amount: 52500,
+                    method: 'UPI',
+                    status: 'COMPLETED',
+                    processedByWorkerId: workerId,
+                    processedByWorkerName: workerName,
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      // Active Preparing Order 2 (For live kitchen KDS & occupied table display)
+      if (butterChicken && garlicNaan && table2) {
+        await prisma.order.create({
+          data: {
+            tenantId,
+            orderNumber: 'ORD-0002',
+            orderType: 'DINE_IN',
+            tableId: table2.id,
+            status: 'PLACED',
+            guestCount: 2,
+            subtotal: 44500,
+            taxAmount: 2225,
+            grandTotal: 46725,
+            createdByWorkerId: workerId,
+            createdByWorkerName: workerName,
+            deviceId: 'pos-main',
+            items: {
+              create: [
+                {
+                  menuItemId: butterChicken.id,
+                  itemName: butterChicken.name,
+                  unitPrice: butterChicken.basePrice,
+                  quantity: 1,
+                  subtotal: butterChicken.basePrice,
+                  status: 'PLACED',
+                  addedByWorkerId: workerId,
+                  addedByWorkerName: workerName,
+                },
+                {
+                  menuItemId: garlicNaan.id,
+                  itemName: garlicNaan.name,
+                  unitPrice: garlicNaan.basePrice,
+                  quantity: 1,
+                  subtotal: garlicNaan.basePrice,
+                  status: 'PLACED',
+                  addedByWorkerId: workerId,
+                  addedByWorkerName: workerName,
+                },
+              ],
+            },
+          },
+        });
+      }
+    }
+  } catch (err: any) {
+    console.error('Error auto-seeding starter data for tenant', tenantId, err.message);
+  }
+}

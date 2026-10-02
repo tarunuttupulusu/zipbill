@@ -17,6 +17,7 @@ import {
 
 import { ROLE_DEFAULT_PERMISSIONS } from '@/lib/permission-engine';
 import { supabase } from '@/lib/supabase';
+import { ZipBillLogo } from '@/components/brand/ZipBillLogo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -73,13 +74,30 @@ export default function LoginPage() {
     } catch {}
   }, []);
 
-  const handleLogoutExisting = () => {
+  const handleLogoutExisting = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Supabase sign out error:', err);
+    }
     localStorage.removeItem('saas_active_session');
     localStorage.removeItem('saas_active_profile');
     localStorage.removeItem('saas_active_tenant');
+    localStorage.removeItem('saas_active_business_type');
+    setSession({
+      userId: '',
+      tenantId: '',
+      email: '',
+      fullName: '',
+      roleName: 'OWNER',
+      permissions: ['*'],
+      deviceId: 'dev-terminal-01',
+      isSuperAdmin: false,
+    });
     setExistingUser(null);
     setExistingTenant(null);
   };
+
 
 
 
@@ -173,6 +191,10 @@ export default function LoginPage() {
         provider: 'google',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            prompt: 'select_account',
+            access_type: 'offline',
+          },
         },
       });
       if (error) {
@@ -188,12 +210,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background text-main flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-6">
-        <Link href="/" className="inline-flex items-center space-x-2 text-xs font-semibold text-secondary hover:text-heading transition">
-          <Store className="w-4 h-4 text-primary" />
-          <span>Restaurant Platform</span>
+        <Link href="/" className="inline-flex flex-col items-center space-y-2 hover:opacity-95 transition">
+          <ZipBillLogo size="lg" variant="full" />
         </Link>
-        <h1 className="mt-3 text-[28px] font-semibold text-heading tracking-tight">Welcome Back</h1>
-        <p className="mt-1 text-[14px] text-secondary">Sign in to your restaurant account</p>
+        <h1 className="mt-4 text-[26px] font-bold text-heading tracking-tight">Welcome Back</h1>
+        <p className="mt-1 text-[13px] text-secondary">Sign in to your restaurant outlet portal</p>
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">

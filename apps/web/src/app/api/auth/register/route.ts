@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
 import { supabaseAdmin } from '@/lib/supabase';
+import { seedTenantStarterData } from '@/lib/seed-starter';
 
 export async function POST(req: NextRequest) {
   try {
@@ -269,6 +270,9 @@ export async function POST(req: NextRequest) {
 
       return { tenant, profile, user, registration };
     });
+
+    // Auto-seed starter tables, categories, menu items and sample order
+    await seedTenantStarterData(result.tenant.id, result.tenant.businessType);
 
     return NextResponse.json({
       success: true,

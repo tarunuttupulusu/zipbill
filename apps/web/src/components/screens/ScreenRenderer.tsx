@@ -1045,6 +1045,12 @@ function renderScreenContent(currentScreen: ScreenDefinition, onNav?: (id: strin
     return (
       <div className="max-w-md mx-auto space-y-3 font-receipt bg-surfaceElevated p-5 rounded-2xl border border-border">
         <div className="text-center pb-3 border-b border-dashed border-slate-600">
+          <div className="font-extrabold text-amber-500 text-lg tracking-tight flex items-center justify-center space-x-1 mb-0.5">
+            <span className="text-slate-400 mr-1">=</span>
+            <span className="text-white">Zip</span>
+            <span className="text-amber-500">Bill</span>
+          </div>
+          <div className="text-[8px] font-bold tracking-[0.2em] text-slate-400 uppercase mb-2">RESTAURANT | CAFE | HOTEL</div>
           <div className="font-bold text-white text-sm">SPICE GARDEN RESTAURANT</div>
           <div className="text-[11px] text-slate-400">104 MG Road, Bengaluru</div>
           <div className="text-[11px] text-slate-400">Invoice: #INV000123 • Table 5</div>

@@ -52,6 +52,8 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { BusinessType } from '@platform/types';
+import { ZipBillLogo } from '@/components/brand/ZipBillLogo';
+import { supabase } from '@/lib/supabase';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   LayoutDashboard: <LayoutDashboard className="w-[18px] h-[18px]" />,
@@ -197,11 +199,17 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
   }
 
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Supabase sign out error:', err);
+    }
     if (typeof window !== 'undefined') {
       localStorage.removeItem('saas_active_session');
       localStorage.removeItem('saas_active_profile');
       localStorage.removeItem('saas_active_business_type');
+      localStorage.removeItem('saas_active_tenant');
     }
     setSession({
       userId: '',
@@ -288,41 +296,44 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
           sidebarCollapsed ? 'w-20' : 'w-[290px]'
         }`}
       >
-        {/* TOP: Brand Logo, Restaurant Name & Collapse */}
-        <div className="h-16 px-5 border-b border-border flex items-center justify-between">
-          <Link href={visibleSections[0]?.href || '/dashboard'} className="flex items-center space-x-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center font-bold text-white shadow-button flex-shrink-0">
-              <Store className="w-5 h-5 stroke-[2]" />
-            </div>
+        {/* TOP: ZipBill Platform Logo, Active Restaurant Outlet & Collapse */}
+        <div className="py-3 px-4 border-b border-border flex flex-col justify-center space-y-2">
+          <div className="flex items-center justify-between">
+            <Link href={visibleSections[0]?.href || '/dashboard'} className="flex items-center space-x-2.5 overflow-hidden">
+              {sidebarCollapsed ? (
+                <ZipBillLogo size="sm" variant="badge" className="w-10 h-10" />
+              ) : (
+                <ZipBillLogo size="md" variant="full" />
+              )}
+            </Link>
+
             {!sidebarCollapsed && (
-              <div className="truncate">
-                <span className="font-semibold text-[15px] text-heading truncate block leading-tight">
-                  {displayedBusinessName}
-                </span>
-                <span className="text-[11px] text-muted font-medium capitalize">
-                  {businessType.toLowerCase().replace('_', ' ')}
-                </span>
+              <div className="flex items-center space-x-1">
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className="p-1 rounded-lg text-placeholder hover:text-heading hover:bg-surfaceMuted transition"
+                  title="Collapse Sidebar"
+                >
+                  <PanelLeftClose className="w-4 h-4" />
+                </button>
               </div>
             )}
-          </Link>
+          </div>
 
           {!sidebarCollapsed && (
-            <div className="flex items-center space-x-1">
-              <button
-                type="button"
-                className="p-1.5 rounded-lg text-placeholder hover:text-heading hover:bg-surfaceMuted transition"
-                title="Notifications"
-              >
-                <Bell className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-1.5 rounded-lg text-placeholder hover:text-heading hover:bg-surfaceMuted transition"
-                title="Collapse Sidebar"
-              >
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
+            <div className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg bg-surfaceMuted border border-borderLight overflow-hidden">
+              <div className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+                <Store className="w-3.5 h-3.5" />
+              </div>
+              <div className="truncate flex-1">
+                <span className="font-bold text-[12px] text-heading truncate block leading-tight">
+                  {displayedBusinessName}
+                </span>
+                <span className="text-[10px] text-secondary font-medium capitalize block">
+                  {businessType.toLowerCase().replace('_', ' ')} Outlet
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -497,9 +508,10 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-lg text-secondary hover:text-main hover:bg-surfaceMuted"
+              className="lg:hidden p-1 rounded-lg text-secondary hover:text-main hover:bg-surfaceMuted flex items-center space-x-1"
+              title="Open Navigation"
             >
-              <Store className="w-5 h-5 text-primary" />
+              <ZipBillLogo size="sm" variant="badge" className="w-8 h-8" />
             </button>
 
             {/* Restaurant Brand Title */}
@@ -507,6 +519,9 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
               <span className="text-base">🍽️</span>
               <span className="font-semibold text-sm text-heading tracking-tight truncate max-w-[240px]">
                 {currentTenant?.name || profile.businessName || displayedBusinessName}
+              </span>
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                ZipBill POS
               </span>
             </div>
           </div>

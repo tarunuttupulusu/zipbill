@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
+import { seedTenantStarterData } from '@/lib/seed-starter';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,14 +82,14 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    // 2. Fetch Tables
-    const tables = await prisma.table.findMany({
+    // 2. Fetch Tables (Auto-seed starter tables & menu if empty)
+    let tables = await prisma.table.findMany({
       where: { tenantId: activeTenantId },
       orderBy: { sortOrder: 'asc' },
     });
 
     // 3. Fetch Categories with Menu Items
-    const categories = await prisma.category.findMany({
+    let categories = await prisma.category.findMany({
       where: { tenantId: activeTenantId },
       include: {
         menuItems: {
@@ -101,6 +102,27 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { sortOrder: 'asc' },
     });
+
+    if (tables.length === 0 || categories.length === 0) {
+      await seedTenantStarterData(activeTenantId, tenant.businessType);
+      tables = await prisma.table.findMany({
+        where: { tenantId: activeTenantId },
+        orderBy: { sortOrder: 'asc' },
+      });
+      categories = await prisma.category.findMany({
+        where: { tenantId: activeTenantId },
+        include: {
+          menuItems: {
+            where: { isAvailable: true },
+            include: {
+              variants: true,
+            },
+            orderBy: [{ sortOrder: 'asc' }, { basePrice: 'asc' }],
+          },
+        },
+        orderBy: { sortOrder: 'asc' },
+      });
+    }
 
     // 4. Fetch All Menu Items Flat (Ordered by Course Rank, Sort Order, Price)
     const menuItems = await prisma.menuItem.findMany({

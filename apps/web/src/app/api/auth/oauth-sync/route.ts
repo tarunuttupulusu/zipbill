@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
+import { seedTenantStarterData } from '@/lib/seed-starter';
 
 export const dynamic = 'force-dynamic';
 
@@ -272,6 +273,9 @@ export async function POST(req: NextRequest) {
     } catch (e: any) {
       console.warn('RestaurantMember sync skipped:', e.message);
     }
+
+    // Auto-seed starter tables, categories, menu items and sample order
+    await seedTenantStarterData(result.tenant.id, 'RESTAURANT');
 
     return NextResponse.json({
       success: true,

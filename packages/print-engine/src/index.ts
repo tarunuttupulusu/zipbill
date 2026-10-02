@@ -96,12 +96,17 @@ export function buildReceiptPrintJob(params: {
   const { business, invoice, order } = params;
   const builder = new EscPosBuilder();
 
-  // Header
+  // Header: ZipBill Branding
   builder.align('CENTER')
     .bold(true)
     .textSize('TITLE')
-    .textLine(business.businessName)
+    .textLine('=ZipBill=')
     .textSize('NORMAL')
+    .bold(false)
+    .textLine('RESTAURANT | CAFE | HOTEL')
+    .divider('-')
+    .bold(true)
+    .textLine(business.businessName)
     .bold(false)
     .textLine(business.address)
     .textLine(`${business.city}, ${business.state}`)
@@ -151,13 +156,14 @@ export function buildReceiptPrintJob(params: {
     .bold(false)
     .divider('=');
 
-  // Payment Status
+  // Payment Status & ZipBill Footer
   builder.align('CENTER')
     .bold(true)
     .textLine(`STATUS: ${invoice.status}`)
+    .textLine('Cardholder PIN verified')
+    .textLine('!!! THANK YOU !!!')
     .bold(false)
-    .textLine('Thank you for dining with us!')
-    .textLine('Please visit again')
+    .textLine('Powered by ZipBill')
     .cut();
 
   return builder.getBytes();

@@ -3,8 +3,11 @@ import { AppProvider } from '@/lib/state';
 import { DynamicNavigation } from '@/components/layout/DynamicNavigation';
 
 export const metadata = {
-  title: 'Restaurant SaaS & POS Platform',
-  description: 'Clean, professional multi-tenant restaurant management and billing platform',
+  title: 'ZipBill - Restaurant, Cafe & Hotel Billing & POS Platform',
+  description: 'ZipBill is the high-performance multi-tenant billing, POS, KOT, and table management platform for restaurants, cafes, and hotels.',
+  icons: {
+    icon: '/brand/zipbill-receipt.jpg',
+  },
 };
 
 export default function RootLayout({
