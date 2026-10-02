@@ -27,7 +27,8 @@ import { buildReceiptPrintJob, buildKotPrintJob } from '@platform/print-engine';
 export default function PosPage() {
   const {
     profile,
-    enabledModules,
+    businessType,
+    enabledModules = [],
     categories,
     menuItems,
     tables,
@@ -37,7 +38,11 @@ export default function PosPage() {
     isOnline,
   } = useApp();
 
-  const isDineIn = enabledModules.includes('operations.tables') || enabledModules.includes('pos.dine_in');
+  const isDineIn =
+    (enabledModules.includes('operations.tables') || enabledModules.includes('pos.dine_in')) &&
+    businessType !== 'CLOUD_KITCHEN' &&
+    businessType !== 'BAKERY' &&
+    businessType !== 'FAST_FOOD';
 
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -280,7 +285,15 @@ export default function PosPage() {
             </div>
           ) : (
             <div className="flex items-center space-x-1.5 text-xs font-semibold text-primary bg-primary-light px-2.5 sm:px-3 py-1.5 rounded-xl border border-primary/20 shrink-0">
-              <span>⚡ Quick POS</span>
+              <span>
+                {businessType === 'CLOUD_KITCHEN'
+                  ? '🛵 Cloud Kitchen Dispatch'
+                  : businessType === 'BAKERY'
+                  ? '🥐 Bakery Takeaway'
+                  : businessType === 'FAST_FOOD'
+                  ? '🍔 QSR High-Speed'
+                  : '⚡ Quick Counter POS'}
+              </span>
             </div>
           )}
 

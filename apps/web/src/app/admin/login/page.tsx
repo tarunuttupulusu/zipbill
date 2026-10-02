@@ -84,8 +84,12 @@ export default function AdminLoginPage() {
         isSuperAdmin: true,
       });
 
-      // Redirect directly to /admin
-      router.push('/admin');
+      // Redirect to /tarun/admin if logged in from /tarun/admin, otherwise /admin
+      const redirectTarget =
+        typeof window !== 'undefined' && window.location.pathname.startsWith('/tarun/admin')
+          ? '/tarun/admin'
+          : '/admin';
+      router.push(redirectTarget);
     } catch (err: any) {
       setErrorMessage(
         err?.message || 'Unable to connect to the Admin Control Plane. Please try again.'
@@ -123,6 +127,24 @@ export default function AdminLoginPage() {
 
       {/* LOGIN CARD */}
       <div className="w-full max-w-md bg-surface p-8 sm:p-9 rounded-card border border-border shadow-sm space-y-6">
+        {/* Quick Demo Credentials Autofill */}
+        <div className="p-3 bg-orange-50/80 rounded-lg border border-orange-200/90 flex items-center justify-between text-xs">
+          <div>
+            <p className="font-semibold text-heading">Demo Super Admin</p>
+            <p className="text-[11px] text-secondary font-mono">admin@platform.pos</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEmail('admin@platform.pos');
+              setPassword('ChangeMeInProduction123!');
+            }}
+            className="px-2.5 py-1 bg-white border border-orange-300 rounded text-primary font-semibold text-[11px] hover:bg-orange-50 transition shadow-xs"
+          >
+            Auto-fill
+          </button>
+        </div>
+
         {errorMessage && (
           <div className="p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start space-x-2.5">
             <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -137,13 +159,15 @@ export default function AdminLoginPage() {
               Admin Email
             </label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Mail className="w-4 h-4 text-placeholder" />
+              </span>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="input-field pl-10"
+                className="input-field input-with-icon"
                 placeholder="superadmin@platform.com"
                 disabled={loading}
               />
@@ -169,13 +193,15 @@ export default function AdminLoginPage() {
               </button>
             </div>
             <div className="relative">
-              <Lock className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <Lock className="w-4 h-4 text-placeholder" />
+              </span>
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="input-field pl-10"
+                className="input-field input-with-icon"
                 placeholder="••••••••••••"
                 disabled={loading}
               />

@@ -157,9 +157,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setBusinessType = (newType: BusinessType) => {
     setBusinessTypeState(newType);
-    setEnabledModules(getDefaultModulesForBusinessType(newType));
+    const defaults = getDefaultModulesForBusinessType(newType);
+    setEnabledModules(defaults);
     if (typeof window !== 'undefined') {
       localStorage.setItem('saas_active_business_type', newType);
+      localStorage.setItem('saas_active_modules', JSON.stringify(defaults));
     }
   };
 
@@ -179,7 +181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         urlSlug = querySlug;
       } else {
         const parts = window.location.pathname.split('/').filter(Boolean);
-        const KNOWN = ['dashboard', 'pos', 'tables', 'orders', 'kitchen', 'menu', 'customers', 'billing', 'payments', 'expenses', 'inventory', 'reports', 'staff', 'qr', 'screens', 'printers', 'sync', 'settings', 'subscription', 'leads', 'offline', 'onboarding', 'login', 'register', 'admin', 'auth'];
+        const KNOWN = ['dashboard', 'pos', 'tables', 'orders', 'kitchen', 'menu', 'customers', 'billing', 'payments', 'expenses', 'inventory', 'reports', 'staff', 'qr', 'screens', 'printers', 'sync', 'settings', 'insights', 'subscription', 'leads', 'offline', 'onboarding', 'login', 'register', 'admin', 'auth'];
         if (parts.length > 0 && !KNOWN.includes(parts[0])) {
           urlSlug = parts[0];
         }
@@ -187,26 +189,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const activeTenantId = profile.tenantId || session.tenantId;
-    if (!activeTenantId && !urlSlug) {
-      setTables([]);
-      setCategories([]);
-      setMenuItems([]);
-      setActiveOrders([]);
-      setCustomers([]);
-      setExpenses([]);
-      setStaff([]);
-      setStats({
-        totalRevenue: 0,
-        totalOrders: 0,
-        activeOrders: 0,
-        occupiedTables: 0,
-        totalTables: 0,
-        totalMenuItems: 0,
-        totalCustomers: 0,
-        totalStaff: 0,
-      });
-      return;
-    }
 
     setIsLoadingData(true);
     try {
@@ -235,6 +217,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         if (data.profile) {
           setProfileState(data.profile);
+        }
+        if (data.modules && Array.isArray(data.modules) && data.modules.length > 0) {
+          if (typeof window !== 'undefined' && !localStorage.getItem('saas_active_modules')) {
+            setEnabledModules(data.modules);
+            localStorage.setItem('saas_active_modules', JSON.stringify(data.modules));
+          }
+        }
+        // If session is empty, auto-initialize session so all actions & POS operate smoothly
+        if (!session.userId && data.tenant) {
+          const autoSession: UserSession = {
+            userId: data.staff?.[0]?.id || 'usr-owner-01',
+            tenantId: data.tenant.id,
+            email: data.staff?.[0]?.email || data.profile?.email || 'owner@restaurant.pos',
+            fullName: data.staff?.[0]?.fullName || 'Restaurant Owner',
+            roleName: 'OWNER',
+            permissions: ['*'],
+            deviceId: 'dev-terminal-01',
+            isSuperAdmin: false,
+          };
+          setSessionState(autoSession);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('saas_active_session', JSON.stringify(autoSession));
+          }
         }
       } else if (res.status === 404) {
         // Stale tenant in localStorage or URL: reset state to clean
@@ -270,7 +275,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const parsed = JSON.parse(savedSession);
         setSessionState(parsed);
       }
-      if (savedBType) {
+      const savedModules = localStorage.getItem('saas_active_modules');
+      if (savedModules) {
+        try {
+          const parsed = JSON.parse(savedModules);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setEnabledModules(parsed);
+          }
+        } catch (e) {
+          console.error('Failed to parse saved modules:', e);
+        }
+      } else if (savedBType) {
         setBusinessTypeState(savedBType as BusinessType);
         setEnabledModules(getDefaultModulesForBusinessType(savedBType as BusinessType));
       }
@@ -318,9 +333,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleModule = (token: ModuleToken) => {
-    setEnabledModules((prev) =>
-      prev.includes(token) ? prev.filter((t) => t !== token) : [...prev, token]
-    );
+    setEnabledModules((prev) => {
+      const isCurrentlyEnabled = prev.includes(token);
+      const next = isCurrentlyEnabled ? prev.filter((t) => t !== token) : [...prev, token];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('saas_active_modules', JSON.stringify(next));
+      }
+      // Asynchronously persist to backend database
+      const activeTenantId = profile.tenantId || session.tenantId;
+      if (activeTenantId) {
+        fetch('/api/tenant/modules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tenantId: activeTenantId,
+            moduleToken: token,
+            isEnabled: !isCurrentlyEnabled,
+          }),
+        }).catch((err) => console.error('Failed to persist module state to DB:', err));
+      }
+      return next;
+    });
   };
 
   const updateTableStatus = async (tableId: string, status: FloorTable['status']) => {

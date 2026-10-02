@@ -97,17 +97,18 @@ export async function POST(req: NextRequest) {
       // 3. Upsert Modules
       if (Array.isArray(modules) && modules.length > 0) {
         for (const mod of modules) {
+          const tokenStr = String(mod).toLowerCase();
           await tx.tenantModule.upsert({
             where: {
               tenantId_moduleToken: {
                 tenantId: targetTenantId,
-                moduleToken: String(mod).toUpperCase(),
+                moduleToken: tokenStr,
               },
             },
             update: { isEnabled: true },
             create: {
               tenantId: targetTenantId,
-              moduleToken: String(mod).toUpperCase(),
+              moduleToken: tokenStr,
               isEnabled: true,
             },
           });

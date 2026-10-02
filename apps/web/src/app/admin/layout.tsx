@@ -52,9 +52,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [adminUser, setAdminUser] = useState<any>(null);
 
+  const isTarunRoute = pathname?.startsWith('/tarun/admin');
+  const loginPath = isTarunRoute ? '/tarun/admin/login' : '/admin/login';
+  const adminBasePath = isTarunRoute ? '/tarun/admin' : '/admin';
+
   useEffect(() => {
     // 1. PUBLIC ROUTE EXEMPTION: /admin/login requires NO sidebar or auth checks
-    if (pathname === '/admin/login') {
+    if (pathname === '/admin/login' || pathname === '/tarun/admin/login') {
       setAuthorized(true);
       return;
     }
@@ -65,7 +69,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         const stored = localStorage.getItem('saas_admin_session');
         if (!stored) {
           setAuthorized(false);
-          router.replace('/admin/login');
+          router.replace(loginPath);
           return;
         }
 
@@ -78,7 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         if (!isAdmin) {
           setAuthorized(false);
-          router.replace('/admin/login');
+          router.replace(loginPath);
           return;
         }
 
@@ -86,15 +90,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         setAuthorized(true);
       } catch (e) {
         setAuthorized(false);
-        router.replace('/admin/login');
+        router.replace(loginPath);
       }
     };
 
     checkAdminAuth();
-  }, [pathname, router]);
+  }, [pathname, router, loginPath]);
 
   // Public login route: render children directly without admin layout
-  if (pathname === '/admin/login') {
+  if (pathname === '/admin/login' || pathname === '/tarun/admin/login') {
     return <>{children}</>;
   }
 
@@ -145,11 +149,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <nav className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-140px)]">
             {ADMIN_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href;
+              const targetHref = item.href.replace('/admin', adminBasePath);
+              const isActive = pathname === targetHref || pathname === item.href;
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={targetHref}
                   className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-lg text-xs font-medium transition ${
                     isActive
                       ? 'bg-primary-light text-primary font-semibold'

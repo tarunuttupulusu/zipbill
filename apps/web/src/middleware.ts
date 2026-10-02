@@ -10,7 +10,6 @@ const PUBLIC_EXCLUDED_PREFIXES = [
   '/login',
   '/register',
   '/auth',
-  '/admin',
   '/pending-approval',
   '/verify-email',
 ];
@@ -34,6 +33,7 @@ const KNOWN_SECTIONS = new Set([
   'printers',
   'sync',
   'settings',
+  'insights',
   'subscription',
   'leads',
   'offline',
@@ -51,7 +51,21 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Root entry point opens the account creation page (Image 1)
+  // 2. EXCLUSIVE ADMIN PATHWAY:
+  // ONLY /tarun/admin (and /tarun/admin/*) shows the admin account and portal!
+  if (pathname === '/tarun/admin' || pathname.startsWith('/tarun/admin/')) {
+    const subPath = pathname.replace(/^\/tarun\/admin/, '') || '';
+    const rewriteUrl = new URL(`/admin${subPath}`, req.url);
+    rewriteUrl.search = req.nextUrl.search;
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
+  // Any direct attempt to open /admin without /tarun/admin redirects to /register
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return NextResponse.redirect(new URL('/register', req.url));
+  }
+
+  // 3. In all other cases, the root entry point opens the register / account creation page
   if (pathname === '/') {
     return NextResponse.redirect(new URL('/register', req.url));
   }

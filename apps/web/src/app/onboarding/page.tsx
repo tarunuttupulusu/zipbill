@@ -355,7 +355,17 @@ export default function CompleteOnboardingWizard() {
                   <button
                     key={item.type}
                     type="button"
-                    onClick={() => setBType(item.type as BusinessType)}
+                    onClick={() => {
+                      const newType = item.type as BusinessType;
+                      setBType(newType);
+                      if (newType === 'CLOUD_KITCHEN' || newType === 'BAKERY' || newType === 'FOOD_COURT') {
+                        setUsesTables(false);
+                        setSelectedModules((prev) => prev.filter((m) => m !== 'TABLES'));
+                      } else {
+                        setUsesTables(true);
+                        setSelectedModules((prev) => (prev.includes('TABLES') ? prev : [...prev, 'TABLES']));
+                      }
+                    }}
                     className={`p-3.5 rounded-xl border text-left transition-all ${
                       bType === item.type
                         ? 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-sm'

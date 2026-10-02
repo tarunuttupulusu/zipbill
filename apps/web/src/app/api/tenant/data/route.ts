@@ -10,46 +10,41 @@ export async function GET(req: NextRequest) {
     const slug = searchParams.get('slug');
     const email = searchParams.get('email');
 
-    if (!tenantId && !slug) {
-      return NextResponse.json({
-        success: true,
-        tenantId: null,
-        tenant: null,
-        availableTenants: [],
-        profile: null,
-        tables: [],
-        categories: [],
-        menuItems: [],
-        orders: [],
-        customers: [],
-        expenses: [],
-        inventory: [],
-        staff: [],
-        stats: {
-          totalRevenue: 0,
-          totalOrders: 0,
-          activeOrders: 0,
-          occupiedTables: 0,
-          totalTables: 0,
-          totalMenuItems: 0,
-          totalCustomers: 0,
-          totalStaff: 0,
+    // 1. Fetch Tenant & Business Profile (by slug, ID, or fallback to latest approved restaurant)
+    let tenant = null;
+    if (slug) {
+      tenant = await prisma.tenant.findUnique({
+        where: { slug },
+        include: {
+          businessProfile: true,
+          modules: true,
+        },
+      });
+    } else if (tenantId) {
+      tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: {
+          businessProfile: true,
+          modules: true,
         },
       });
     }
 
-    // 1. Fetch Tenant & Business Profile (by slug or ID)
-    const tenant = await prisma.tenant.findUnique({
-      where: slug ? { slug } : { id: tenantId! },
-      include: {
-        businessProfile: true,
-        modules: true,
-      },
-    });
+    if (!tenant) {
+      // Fallback to the latest approved tenant so sections are never empty
+      tenant = await prisma.tenant.findFirst({
+        where: { status: 'APPROVED' },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          businessProfile: true,
+          modules: true,
+        },
+      });
+    }
 
     if (!tenant) {
       return NextResponse.json(
-        { error: `Tenant ${slug || tenantId} not found.` },
+        { error: `No active restaurant tenant found.` },
         { status: 404 }
       );
     }
@@ -211,6 +206,9 @@ export async function GET(req: NextRequest) {
       inventory,
       staff,
       stats,
+      modules: tenant.modules
+        ? tenant.modules.filter((m: any) => m.isEnabled).map((m: any) => m.moduleToken)
+        : [],
     });
   } catch (error: any) {
     console.error('Tenant data fetching error:', error);

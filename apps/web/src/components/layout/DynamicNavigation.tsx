@@ -9,6 +9,7 @@ import {
   checkPermission,
   ROLE_DEFAULT_PERMISSIONS,
   ROUTE_PERMISSION_MAP,
+  SECTION_MODULE_REQUIREMENTS,
 } from '@/lib/permission-engine';
 import { ArchitectureSection } from '@/lib/portal-architecture';
 import {
@@ -47,6 +48,7 @@ import {
   MoreHorizontal,
   ChevronUp,
   Lock,
+  Sliders,
   ExternalLink,
 } from 'lucide-react';
 import { BusinessType } from '@platform/types';
@@ -80,6 +82,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     businessType,
     setBusinessType,
     enabledModules,
+    toggleModule,
     session,
     setSession,
     isOnline,
@@ -102,14 +105,15 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     pathname === '/register' ||
     pathname === '/pending-approval' ||
     pathname === '/verify-email' ||
-    pathname?.startsWith('/admin');
+    pathname?.startsWith('/admin') ||
+    pathname?.startsWith('/tarun/admin');
 
   // URL-based multi-tenancy & section resolution
   const pathParts = pathname ? pathname.split('/').filter(Boolean) : [];
   const KNOWN_SECTIONS_SET = new Set([
     'dashboard', 'pos', 'tables', 'orders', 'kitchen', 'menu', 'customers',
     'billing', 'payments', 'expenses', 'inventory', 'reports', 'staff', 'qr',
-    'screens', 'printers', 'sync', 'settings', 'subscription', 'leads', 'offline', 'onboarding'
+    'screens', 'printers', 'sync', 'settings', 'subscription', 'leads', 'offline', 'onboarding', 'insights'
   ]);
 
   const currentSlugFromUrl = pathParts.length > 0 && !KNOWN_SECTIONS_SET.has(pathParts[0]) ? pathParts[0] : null;
@@ -167,6 +171,16 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
   const isAuthorizedForCurrentRoute = requiredPermission
     ? checkPermission(effectivePermissions, requiredPermission)
     : true;
+
+  const currentSectionId = currentSection.replace(/^\//, '').split('/')[0] || 'dashboard';
+  const requiredSectionModules = SECTION_MODULE_REQUIREMENTS[currentSectionId];
+  const isModuleDisabledForCurrentRoute = Boolean(
+    requiredSectionModules &&
+    requiredSectionModules.length > 0 &&
+    !requiredSectionModules.some((token) =>
+      enabledModules.some((m) => String(m).toLowerCase() === token.toLowerCase())
+    )
+  );
 
   // Check if unauthenticated and redirect to /login
   React.useEffect(() => {
@@ -585,6 +599,49 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
                   >
                     Sign Out / Switch Account
                   </button>
+                </div>
+              </div>
+            </div>
+          ) : isModuleDisabledForCurrentRoute ? (
+            <div className="min-h-[80vh] flex items-center justify-center p-6 font-sans">
+              <div className="card max-w-lg w-full p-8 text-center space-y-5 border-warning/40 shadow-card">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-warning-bg text-warning flex items-center justify-center">
+                  <Sliders className="w-7 h-7 stroke-[2]" />
+                </div>
+                <div className="space-y-2">
+                  <span className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-warning-bg text-warning">
+                    Feature Inactive
+                  </span>
+                  <h2 className="text-2xl font-bold text-heading">
+                    {currentSectionId.toUpperCase()} Is Currently Disabled
+                  </h2>
+                  <p className="text-secondary text-sm leading-relaxed">
+                    This module is currently toggled OFF in your system preferences. When disabled, it is hidden from the sidebar navigation and routes.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  {requiredSectionModules && requiredSectionModules[0] && (
+                    <button
+                      type="button"
+                      onClick={() => toggleModule(requiredSectionModules[0] as any)}
+                      className="btn-primary w-full sm:w-auto text-xs py-2.5 px-6"
+                    >
+                      Enable {currentSectionId.toUpperCase()} Module
+                    </button>
+                  )}
+                  <Link
+                    href={getSectionHref('/dashboard')}
+                    className="btn-secondary w-full sm:w-auto text-xs py-2.5 px-5"
+                  >
+                    Back to Dashboard
+                  </Link>
+                  <Link
+                    href={getSectionHref('/settings?tab=modules')}
+                    className="w-full sm:w-auto text-xs py-2.5 px-3 text-muted hover:text-heading"
+                  >
+                    System Modules
+                  </Link>
                 </div>
               </div>
             </div>

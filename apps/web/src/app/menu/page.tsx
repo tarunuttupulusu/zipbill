@@ -660,7 +660,7 @@ Gulab Jamun with Rabdi - ₹140 [VEG]`)
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-borderLight">
             <span className="text-[11px] text-muted flex items-center space-x-1.5">
               <Sparkles className="w-3.5 h-3.5 text-primary" />
-              <span>Multimodal Vision: Google Gemini 2.5 Flash</span>
+              <span>Multimodal Vision: Google Gemini 3.5 Flash & Lite (Active)</span>
             </span>
 
             <button

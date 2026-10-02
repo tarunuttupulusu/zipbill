@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/lib/state';
@@ -14,6 +14,10 @@ import {
   ArrowRight,
   ArrowLeft,
   Building,
+  CheckCircle2,
+  LogOut,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { BusinessType } from '@platform/types';
 import { supabase } from '@/lib/supabase';
@@ -21,6 +25,43 @@ import { supabase } from '@/lib/supabase';
 export default function RegisterPage() {
   const router = useRouter();
   const { setProfile, setBusinessType, setSession } = useApp();
+
+  const [existingUser, setExistingUser] = useState<any>(null);
+  const [existingTenant, setExistingTenant] = useState<any>(null);
+  const [showRegisterAnyway, setShowRegisterAnyway] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedSession = localStorage.getItem('saas_active_session');
+      const savedTenant = localStorage.getItem('saas_active_tenant');
+      const savedProfile = localStorage.getItem('saas_active_profile');
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession);
+        if (parsed?.userId && parsed?.email && parsed.userId !== 'usr-owner-01') {
+          setExistingUser(parsed);
+          if (savedTenant) {
+            try {
+              setExistingTenant(JSON.parse(savedTenant));
+            } catch {}
+          } else if (savedProfile) {
+            try {
+              const p = JSON.parse(savedProfile);
+              setExistingTenant({ name: p.businessName, slug: '' });
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+  }, []);
+
+  const handleLogoutExisting = () => {
+    localStorage.removeItem('saas_active_session');
+    localStorage.removeItem('saas_active_profile');
+    localStorage.removeItem('saas_active_tenant');
+    setExistingUser(null);
+    setExistingTenant(null);
+    setShowRegisterAnyway(true);
+  };
 
   const [step, setStep] = useState<1 | 2>(1);
 
@@ -53,6 +94,11 @@ export default function RegisterPage() {
 
   const handleStep1Submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match. Please verify your password.');
+      return;
+    }
+    setErrorMsg(null);
     setStep(2);
   };
 
@@ -156,6 +202,72 @@ export default function RegisterPage() {
     }
   };
 
+  // IF USER IS ALREADY LOGGED IN: Show Already Logged In screen
+  if (existingUser && !showRegisterAnyway) {
+    return (
+      <div className="min-h-screen bg-background text-main flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-6">
+          <Link href="/" className="inline-flex items-center space-x-2 text-xs font-semibold text-secondary hover:text-heading transition">
+            <Store className="w-4 h-4 text-primary" />
+            <span>Restaurant SaaS Platform</span>
+          </Link>
+        </div>
+
+        <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
+          <div className="card p-8 rounded-card border border-border shadow-sm space-y-6 text-center">
+            <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <div>
+              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold mb-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Active Account Logged In</span>
+              </div>
+              <h2 className="text-xl font-bold text-heading">
+                Welcome back, {existingUser.fullName || 'User'}!
+              </h2>
+              <p className="text-xs text-secondary mt-1">
+                Currently signed in as <span className="font-semibold text-heading">{existingUser.email}</span>
+              </p>
+              {existingTenant?.name && (
+                <div className="mt-2.5 inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-surfaceMuted border border-border text-xs text-secondary font-medium">
+                  <Store className="w-3.5 h-3.5 text-primary" />
+                  <span>{existingTenant.name}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={() => {
+                  if (existingTenant?.slug) {
+                    router.push(`/${existingTenant.slug}/dashboard`);
+                  } else {
+                    router.push('/dashboard');
+                  }
+                }}
+                className="w-full btn-primary py-3 flex items-center justify-center space-x-2 font-semibold text-sm shadow-button hover:shadow-button-hover"
+              >
+                <span>Continue to Restaurant Dashboard</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLogoutExisting}
+                className="w-full btn-secondary py-2.5 flex items-center justify-center space-x-2 text-xs text-red-600 hover:bg-red-50 hover:border-red-200"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out & Create New Account</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-main flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-xl text-center mb-6">
@@ -190,91 +302,110 @@ export default function RegisterPage() {
       <div className="sm:mx-auto sm:w-full sm:max-w-xl px-4 sm:px-0">
         <div className="card p-8 rounded-card space-y-6">
           {step === 1 ? (
-            <form onSubmit={handleStep1Submit} className="space-y-4">
-              <div>
-                <label className="block text-[13px] font-medium text-secondary mb-1.5">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="input-field pl-10"
-                    placeholder="Your Full Name"
-                  />
+            <div className="space-y-5">
+              {errorMsg && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center space-x-2">
+                  <span>{errorMsg}</span>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-[13px] font-medium text-secondary mb-1.5">
-                  Work Email
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="input-field pl-10"
-                    placeholder="owner@yourrestaurant.com"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form onSubmit={handleStep1Submit} className="space-y-4">
                 <div>
-                  <label className="block text-[13px] font-medium text-secondary mb-1.5">
-                    Password
+                  <label className="block text-[13px] font-semibold text-heading mb-1.5">
+                    Full Name
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <User className="w-4 h-4 text-placeholder" />
+                    </span>
                     <input
-                      type="password"
+                      type="text"
                       required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="input-field pl-10"
-                      placeholder="••••••••••••"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="input-field input-with-icon"
+                      placeholder="Your Full Name"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[13px] font-medium text-secondary mb-1.5">
-                    Confirm Password
+                  <label className="block text-[13px] font-semibold text-heading mb-1.5">
+                    Work Email
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Mail className="w-4 h-4 text-placeholder" />
+                    </span>
                     <input
-                      type="password"
+                      type="email"
                       required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="input-field pl-10"
-                      placeholder="••••••••••••"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="input-field input-with-icon"
+                      placeholder="owner@yourrestaurant.com"
                     />
                   </div>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                className="w-full mt-2 btn-primary py-2.5 flex items-center justify-center space-x-2"
-              >
-                <span>Continue to Restaurant Details</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[13px] font-semibold text-heading mb-1.5">
+                      Password
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <Lock className="w-4 h-4 text-placeholder" />
+                      </span>
+                      <input
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="input-field input-with-icon"
+                        placeholder="••••••••••••"
+                      />
+                    </div>
+                  </div>
 
+                  <div>
+                    <label className="block text-[13px] font-semibold text-heading mb-1.5">
+                      Confirm Password
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <Lock className="w-4 h-4 text-placeholder" />
+                      </span>
+                      <input
+                        type="password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="input-field input-with-icon"
+                        placeholder="••••••••••••"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full mt-2 btn-primary py-3 flex items-center justify-center space-x-2 font-semibold text-sm shadow-button hover:shadow-button-hover"
+                >
+                  <span>Continue to Restaurant Details</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </form>
+
+              {/* Divider & Google Auth at the Bottom */}
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-border" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-surface px-2 text-muted">Or authenticate with</span>
+                  <span className="bg-surface px-3 text-secondary font-medium tracking-wider">
+                    or continue with
+                  </span>
                 </div>
               </div>
 
@@ -282,7 +413,7 @@ export default function RegisterPage() {
                 type="button"
                 onClick={handleGoogleAuth}
                 disabled={loading}
-                className="w-full btn-secondary py-2.5 flex items-center justify-center space-x-2 text-sm"
+                className="w-full btn-secondary py-3 flex items-center justify-center space-x-2.5 text-sm font-semibold hover:bg-surfaceMuted transition shadow-xs border border-border"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path
@@ -304,28 +435,30 @@ export default function RegisterPage() {
                 </svg>
                 <span>Continue with Google</span>
               </button>
-            </form>
+            </div>
           ) : (
             <form onSubmit={handleFinalSubmit} className="space-y-4">
               <div>
-                <label className="block text-[13px] font-medium text-secondary mb-1.5">
+                <label className="block text-[13px] font-semibold text-heading mb-1.5">
                   Restaurant Name
                 </label>
                 <div className="relative">
-                  <Building className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Building className="w-4 h-4 text-placeholder" />
+                  </span>
                   <input
                     type="text"
                     required
                     value={restaurantName}
                     onChange={(e) => setRestaurantName(e.target.value)}
-                    className="input-field pl-10"
+                    className="input-field input-with-icon"
                     placeholder="e.g. Royal Tandoor & Grill"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[13px] font-medium text-secondary mb-1.5">
+                <label className="block text-[13px] font-semibold text-heading mb-1.5">
                   Business Type
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -349,33 +482,39 @@ export default function RegisterPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[13px] font-medium text-secondary mb-1.5">
+                  <label className="block text-[13px] font-semibold text-heading mb-1.5">
                     Phone Number
                   </label>
                   <div className="relative">
-                    <Phone className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Phone className="w-4 h-4 text-placeholder" />
+                    </span>
                     <input
                       type="tel"
                       required
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="input-field pl-10"
+                      className="input-field input-with-icon"
+                      placeholder="+91 98765 43210"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[13px] font-medium text-secondary mb-1.5">
+                  <label className="block text-[13px] font-semibold text-heading mb-1.5">
                     City
                   </label>
                   <div className="relative">
-                    <MapPin className="w-4 h-4 text-placeholder absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <MapPin className="w-4 h-4 text-placeholder" />
+                    </span>
                     <input
                       type="text"
                       required
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      className="input-field pl-10"
+                      className="input-field input-with-icon"
+                      placeholder="City"
                     />
                   </div>
                 </div>

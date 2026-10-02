@@ -381,6 +381,70 @@ export function checkModuleAccess(userPermissions: string[], moduleId: string): 
 }
 
 // ============================================================
+// DYNAMIC MODULE REQUIREMENTS MAPPING
+// Strictly maps sidebar sections and sub-items to system module tokens.
+// If a module is disabled in restaurant settings, it will NOT show in the sidebar.
+// ============================================================
+
+export const SECTION_MODULE_REQUIREMENTS: Record<string, string[]> = {
+  pos: ['pos.dine_in', 'pos.quick_counter', 'pos.takeaway', 'pos.delivery'],
+  tables: ['operations.tables'],
+  kitchen: ['operations.kitchen_kds'],
+  inventory: ['inventory.raw_materials', 'inventory.recipes_bom'],
+  customers: ['crm.customers', 'crm.loyalty'],
+  expenses: ['finance.expenses'],
+  qr: ['qr.table_ordering', 'qr.digital_menu', 'qr.table_pay'],
+  printers: ['hardware.thermal_printers', 'operations.kot_printing'],
+  reports: ['reports.sales_analytics', 'reports.staff_activity'],
+  insights: ['reports.sales_analytics'],
+};
+
+export const CHILD_MODULE_REQUIREMENTS: Record<string, string[]> = {
+  // POS children
+  dine_in: ['pos.dine_in'],
+  quick_billing: ['pos.quick_counter'],
+  takeaway: ['pos.takeaway'],
+  delivery: ['pos.delivery'],
+
+  // Tables children
+  table_qr_codes: ['qr.table_ordering', 'qr.digital_menu'],
+
+  // Kitchen children
+  kot: ['operations.kot_printing'],
+
+  // Menu children
+  variants: ['catalog.modifiers_variants'],
+  modifiers: ['catalog.modifiers_variants'],
+  add_ons: ['catalog.modifiers_variants'],
+  ai_menu_import: ['ai.menu_import'],
+  qr_menu: ['qr.digital_menu', 'qr.table_ordering'],
+
+  // Billing children
+  split_bills: ['billing.split_payment'],
+
+  // Payments children
+  split_payments: ['billing.split_payment'],
+
+  // Inventory children
+  recipes: ['inventory.recipes_bom'],
+
+  // Customers children
+  loyalty: ['crm.loyalty'],
+
+  // Staff children
+  devices: ['staff.device_mgmt'],
+  sessions: ['staff.device_mgmt'],
+
+  // QR children
+  qr_ordering: ['qr.table_ordering'],
+  qr_digital_menu: ['qr.digital_menu'],
+  qr_bill_payment: ['qr.table_pay'],
+
+  // Printers children
+  kot_printers: ['operations.kot_printing'],
+};
+
+// ============================================================
 // 12-STEP DYNAMIC NAVIGATION GENERATOR
 // ============================================================
 
@@ -395,13 +459,22 @@ export interface NavigationGenerationParams {
 }
 
 export function generateDynamicNavigation(params: NavigationGenerationParams): ArchitectureSection[] {
-  const { businessType, enabledModules, userRole, userPermissions } = params;
+  const { businessType, enabledModules = [], userRole, userPermissions } = params;
 
   const normalizedRole = (userRole || 'OWNER').toUpperCase();
   const effectivePermissions =
     userPermissions && userPermissions.length > 0
       ? userPermissions
       : ROLE_DEFAULT_PERMISSIONS[normalizedRole] || ROLE_DEFAULT_PERMISSIONS.WAITER;
+
+  // Normalize enabled modules for reliable matching (support lowercase and uppercase)
+  const normalizedEnabled = new Set(
+    enabledModules.map((m) => String(m).toLowerCase())
+  );
+
+  const hasModule = (token: string) =>
+    normalizedEnabled.has(token.toLowerCase()) ||
+    normalizedEnabled.has(token.toUpperCase());
 
   const generatedSections: ArchitectureSection[] = [];
 
@@ -417,40 +490,47 @@ export function generateDynamicNavigation(params: NavigationGenerationParams): A
       continue;
     }
 
-    // STEP 8: Filter unavailable modules based on Business Type
-    if (businessType === 'CLOUD_KITCHEN' && section.id === 'tables') {
-      continue;
-    }
-    if (businessType === 'BAKERY' && section.id === 'tables') {
+    // Business Type exclusions (e.g. Cloud Kitchen or Bakery do not have dining tables)
+    if ((businessType === 'CLOUD_KITCHEN' || businessType === 'BAKERY') && section.id === 'tables') {
       continue;
     }
 
-    // Check if module is enabled in restaurant config
-    if (section.id === 'kitchen' && !enabledModules.includes('operations.kitchen_kds') && !userPermissions?.includes('*')) {
-      continue;
-    }
-    if (section.id === 'tables' && !enabledModules.includes('operations.tables') && !userPermissions?.includes('*')) {
-      continue;
+    // STRICT MODULE REQUIREMENT CHECK:
+    // When a module is disabled in system settings, it CANNOT show in the sidebar (even for Owner)
+    const requiredModules = SECTION_MODULE_REQUIREMENTS[section.id];
+    if (requiredModules && requiredModules.length > 0) {
+      const hasAnyRequired = requiredModules.some((token) => hasModule(token));
+      if (!hasAnyRequired) {
+        continue;
+      }
     }
 
-    // STEP 9: Filter unauthorized modules
+    // Role-based Module Access Permission Check
     if (!checkModuleAccess(effectivePermissions, section.id)) {
       continue;
     }
 
-    // STEP 10: Filter unauthorized actions (children)
+    // Filter Children based on both Module requirements AND Permissions
     const authorizedChildren = section.children.filter((child) => {
+      // 1. Check if child feature is enabled in system modules
+      const childModuleReq = CHILD_MODULE_REQUIREMENTS[child.id];
+      if (childModuleReq && childModuleReq.length > 0) {
+        const hasChildMod = childModuleReq.some((token) => hasModule(token));
+        if (!hasChildMod) return false;
+      }
+
+      // 2. Check if user has permission for child action
       const requiredCode = SECTION_CHILD_PERMISSIONS[child.id];
       if (!requiredCode) return true;
       return checkPermission(effectivePermissions, requiredCode);
     });
 
-    // STEP 11: Remove empty sections (if no authorized children, omit)
+    // Remove empty sections (if no authorized children, omit)
     if (section.children.length > 0 && authorizedChildren.length === 0) {
       continue;
     }
 
-    // STEP 12: Add to final navigation
+    // Add to final dynamic navigation
     generatedSections.push({
       ...section,
       children: authorizedChildren,

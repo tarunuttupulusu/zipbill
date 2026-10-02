@@ -176,12 +176,16 @@ body {
   background: #FFFFFF;
   border: 1px solid #E8E6E4;
   border-radius: 12px;
-  height: 42px;
-  padding: 0 14px;
+  height: 44px;
+  padding-left: 14px;
+  padding-right: 14px;
   font-size: 14px;
   color: #2D2D2D;
   transition: border-color 180ms ease, box-shadow 180ms ease;
   width: 100%;
+}
+.input-with-icon {
+  padding-left: 44px !important;
 }
 .input-field::placeholder {
   color: #A8A29E;
