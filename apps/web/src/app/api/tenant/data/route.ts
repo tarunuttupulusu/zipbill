@@ -10,17 +10,9 @@ export async function GET(req: NextRequest) {
     const slug = searchParams.get('slug');
     const email = searchParams.get('email');
 
-    // 1. Fetch Tenant & Business Profile (by slug, ID, or fallback to latest approved restaurant)
+    // 1. Fetch Tenant & Business Profile (by tenantId, slug, or user email)
     let tenant = null;
-    if (slug) {
-      tenant = await prisma.tenant.findUnique({
-        where: { slug },
-        include: {
-          businessProfile: true,
-          modules: true,
-        },
-      });
-    } else if (tenantId) {
+    if (tenantId) {
       tenant = await prisma.tenant.findUnique({
         where: { id: tenantId },
         include: {
@@ -28,23 +20,34 @@ export async function GET(req: NextRequest) {
           modules: true,
         },
       });
-    }
-
-    if (!tenant) {
-      // Fallback to the latest approved tenant so sections are never empty
-      tenant = await prisma.tenant.findFirst({
-        where: { status: 'APPROVED' },
-        orderBy: { createdAt: 'desc' },
+    } else if (slug) {
+      tenant = await prisma.tenant.findUnique({
+        where: { slug },
         include: {
           businessProfile: true,
           modules: true,
         },
       });
+    } else if (email) {
+      const user = await prisma.user.findFirst({
+        where: { email },
+        include: {
+          tenant: {
+            include: {
+              businessProfile: true,
+              modules: true,
+            },
+          },
+        },
+      });
+      if (user?.tenant) {
+        tenant = user.tenant;
+      }
     }
 
     if (!tenant) {
       return NextResponse.json(
-        { error: `No active restaurant tenant found.` },
+        { error: 'No active restaurant tenant found for this session or URL.' },
         { status: 404 }
       );
     }

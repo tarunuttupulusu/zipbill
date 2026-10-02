@@ -37,7 +37,23 @@ export default function RegisterPage() {
       const savedProfile = localStorage.getItem('saas_active_profile');
       if (savedSession) {
         const parsed = JSON.parse(savedSession);
-        if (parsed?.userId && parsed?.email && parsed.userId !== 'usr-owner-01') {
+        // Automatically purge any dummy/test sessions so real users are never trapped in test accounts
+        if (
+          parsed.userId === 'usr-owner-01' ||
+          parsed.email === 'owner@restaurant.pos' ||
+          parsed.email?.startsWith('test-') ||
+          parsed.email?.includes('example.com') ||
+          parsed.fullName?.includes('Dynamic Owner') ||
+          parsed.fullName?.includes('Test') ||
+          parsed.tenantId === 'b89ad650-7510-4159-819b-2adb49642c18'
+        ) {
+          localStorage.removeItem('saas_active_session');
+          localStorage.removeItem('saas_active_profile');
+          localStorage.removeItem('saas_active_tenant');
+          setExistingUser(null);
+          return;
+        }
+        if (parsed?.userId && parsed?.email) {
           setExistingUser(parsed);
           if (savedTenant) {
             try {
@@ -60,7 +76,6 @@ export default function RegisterPage() {
     localStorage.removeItem('saas_active_tenant');
     setExistingUser(null);
     setExistingTenant(null);
-    setShowRegisterAnyway(true);
   };
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -202,72 +217,6 @@ export default function RegisterPage() {
     }
   };
 
-  // IF USER IS ALREADY LOGGED IN: Show Already Logged In screen
-  if (existingUser && !showRegisterAnyway) {
-    return (
-      <div className="min-h-screen bg-background text-main flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-6">
-          <Link href="/" className="inline-flex items-center space-x-2 text-xs font-semibold text-secondary hover:text-heading transition">
-            <Store className="w-4 h-4 text-primary" />
-            <span>Restaurant SaaS Platform</span>
-          </Link>
-        </div>
-
-        <div className="sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-          <div className="card p-8 rounded-card border border-border shadow-sm space-y-6 text-center">
-            <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-
-            <div>
-              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold mb-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Active Account Logged In</span>
-              </div>
-              <h2 className="text-xl font-bold text-heading">
-                Welcome back, {existingUser.fullName || 'User'}!
-              </h2>
-              <p className="text-xs text-secondary mt-1">
-                Currently signed in as <span className="font-semibold text-heading">{existingUser.email}</span>
-              </p>
-              {existingTenant?.name && (
-                <div className="mt-2.5 inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-surfaceMuted border border-border text-xs text-secondary font-medium">
-                  <Store className="w-3.5 h-3.5 text-primary" />
-                  <span>{existingTenant.name}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <button
-                onClick={() => {
-                  if (existingTenant?.slug) {
-                    router.push(`/${existingTenant.slug}/dashboard`);
-                  } else {
-                    router.push('/dashboard');
-                  }
-                }}
-                className="w-full btn-primary py-3 flex items-center justify-center space-x-2 font-semibold text-sm shadow-button hover:shadow-button-hover"
-              >
-                <span>Continue to Restaurant Dashboard</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleLogoutExisting}
-                className="w-full btn-secondary py-2.5 flex items-center justify-center space-x-2 text-xs text-red-600 hover:bg-red-50 hover:border-red-200"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Sign Out & Create New Account</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background text-main flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-xl text-center mb-6">
@@ -300,6 +249,40 @@ export default function RegisterPage() {
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-xl px-4 sm:px-0">
+        {existingUser && (
+          <div className="mb-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-semibold">Currently signed in as {existingUser.email}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogoutExisting}
+                className="text-red-600 font-bold hover:underline"
+              >
+                Sign Out
+              </button>
+            </div>
+            {existingTenant?.name && (
+              <p className="text-secondary text-[11px]">Restaurant: {existingTenant.name}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (existingTenant?.slug) {
+                  router.push(`/${existingTenant.slug}/dashboard`);
+                } else {
+                  router.push('/dashboard');
+                }
+              }}
+              className="w-full mt-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-center flex items-center justify-center space-x-1.5 transition"
+            >
+              <span>Continue to Dashboard</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
         <div className="card p-8 rounded-card space-y-6">
           {step === 1 ? (
             <div className="space-y-5">

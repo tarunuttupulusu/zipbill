@@ -190,6 +190,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const activeTenantId = profile.tenantId || session.tenantId;
 
+    // If there is no active tenant, slug, or user email, skip querying
+    if (!activeTenantId && !urlSlug && !session.email) {
+      return;
+    }
+
     setIsLoadingData(true);
     try {
       const q = new URLSearchParams();
@@ -224,28 +229,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('saas_active_modules', JSON.stringify(data.modules));
           }
         }
-        // If session is empty, auto-initialize session so all actions & POS operate smoothly
-        if (!session.userId && data.tenant) {
-          const autoSession: UserSession = {
-            userId: data.staff?.[0]?.id || 'usr-owner-01',
-            tenantId: data.tenant.id,
-            email: data.staff?.[0]?.email || data.profile?.email || 'owner@restaurant.pos',
-            fullName: data.staff?.[0]?.fullName || 'Restaurant Owner',
-            roleName: 'OWNER',
-            permissions: ['*'],
-            deviceId: 'dev-terminal-01',
-            isSuperAdmin: false,
-          };
-          setSessionState(autoSession);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('saas_active_session', JSON.stringify(autoSession));
-          }
-        }
       } else if (res.status === 404) {
-        // Stale tenant in localStorage or URL: reset state to clean
+        // Stale tenant in localStorage or URL: reset state cleanly
         if (typeof window !== 'undefined') {
           localStorage.removeItem('saas_active_profile');
           localStorage.removeItem('saas_active_tenant');
+          localStorage.removeItem('saas_active_session');
         }
         setCurrentTenant(null);
         setTables([]);
@@ -273,7 +262,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (savedSession) {
         const parsed = JSON.parse(savedSession);
-        setSessionState(parsed);
+        // Automatically purge any dummy/test sessions so real users are never trapped in test accounts
+        if (
+          parsed.userId === 'usr-owner-01' ||
+          parsed.email === 'owner@restaurant.pos' ||
+          parsed.email?.startsWith('test-') ||
+          parsed.email?.includes('example.com') ||
+          parsed.fullName?.includes('Dynamic Owner') ||
+          parsed.fullName?.includes('Test') ||
+          parsed.tenantId === 'b89ad650-7510-4159-819b-2adb49642c18'
+        ) {
+          localStorage.removeItem('saas_active_session');
+          localStorage.removeItem('saas_active_profile');
+          localStorage.removeItem('saas_active_tenant');
+        } else {
+          setSessionState(parsed);
+        }
       }
       const savedModules = localStorage.getItem('saas_active_modules');
       if (savedModules) {

@@ -38,17 +38,10 @@ export async function POST(req: NextRequest) {
     } = body;
 
     // Resolve tenant
-    let targetTenantId = tenantId;
-    if (!targetTenantId) {
-      const firstTenant = await prisma.tenant.findFirst({
-        where: { status: 'APPROVED' },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (!firstTenant) {
-        return NextResponse.json({ error: 'No active tenant found to onboard.' }, { status: 404 });
-      }
-      targetTenantId = firstTenant.id;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'tenantId is required to complete onboarding.' }, { status: 400 });
     }
+    const targetTenantId = tenantId;
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Update Tenant businessType

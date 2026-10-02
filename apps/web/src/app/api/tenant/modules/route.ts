@@ -8,18 +8,11 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const tenantId = searchParams.get('tenantId');
 
-    let targetTenantId = tenantId;
-    if (!targetTenantId) {
-      const firstTenant = await prisma.tenant.findFirst({
-        where: { status: 'APPROVED' },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (firstTenant) targetTenantId = firstTenant.id;
-    }
-
-    if (!targetTenantId) {
+    if (!tenantId) {
       return NextResponse.json({ success: true, modules: [] });
     }
+
+    const targetTenantId = tenantId;
 
     const tenantModules = await prisma.tenantModule.findMany({
       where: { tenantId: targetTenantId },
@@ -40,21 +33,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { tenantId, moduleToken, isEnabled } = body;
 
-    let targetTenantId = tenantId;
-    if (!targetTenantId) {
-      const firstTenant = await prisma.tenant.findFirst({
-        where: { status: 'APPROVED' },
-        orderBy: { createdAt: 'desc' },
-      });
-      if (firstTenant) targetTenantId = firstTenant.id;
-    }
-
-    if (!targetTenantId || !moduleToken) {
+    if (!tenantId || !moduleToken) {
       return NextResponse.json(
         { error: 'tenantId and moduleToken are required.' },
         { status: 400 }
       );
     }
+
+    const targetTenantId = tenantId;
 
     const updated = await prisma.tenantModule.upsert({
       where: {

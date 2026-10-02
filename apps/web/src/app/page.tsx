@@ -9,7 +9,14 @@ export default function RootPage() {
   const { session } = useApp();
 
   useEffect(() => {
-    if (session && session.userId && session.userId !== 'usr-owner-01') {
+    if (
+      session &&
+      session.userId &&
+      session.userId !== 'usr-owner-01' &&
+      session.email !== 'owner@restaurant.pos' &&
+      !session.email?.startsWith('test-') &&
+      !session.email?.includes('example.com')
+    ) {
       router.replace('/dashboard');
     } else {
       router.replace('/register');
