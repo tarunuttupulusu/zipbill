@@ -54,16 +54,7 @@ export async function POST(req: NextRequest) {
     const slug = `${baseSlug}-${Date.now().toString(36)}`;
 
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Ensure Profile record exists first in public.profiles for foreign key constraints
-      await tx.$executeRawUnsafe(
-        `INSERT INTO public.profiles (id, full_name, phone, created_at, updated_at)
-         VALUES ($1::uuid, $2, '', NOW(), NOW())
-         ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name`,
-        userId,
-        cleanName
-      );
-
-      // 2. Create Tenant with APPROVED status
+      // 1. Create Tenant with APPROVED status
       const tenant = await tx.tenant.create({
         data: {
           slug,
@@ -73,14 +64,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 3. Update owner_user_id on Tenant
-      await tx.$executeRawUnsafe(
-        `UPDATE public."Tenant" SET owner_user_id = $1::uuid WHERE id = $2`,
-        userId,
-        tenant.id
-      );
-
-      // 4. Create BusinessProfile
+      // 2. Create BusinessProfile
       const profile = await tx.businessProfile.create({
         data: {
           tenantId: tenant.id,
@@ -98,14 +82,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 5. Update user_id on BusinessProfile
-      await tx.$executeRawUnsafe(
-        `UPDATE public."BusinessProfile" SET user_id = $1::uuid WHERE id = $2`,
-        userId,
-        profile.id
-      );
-
-      // 6. Create the 3 linked roles for this restaurant: OWNER, WAITER, KITCHEN
+      // 3. Create the 3 linked roles for this restaurant: OWNER, WAITER, KITCHEN
       const ownerRole = await tx.role.upsert({
         where: { tenantId_name: { tenantId: tenant.id, name: 'OWNER' } },
         update: {},
@@ -157,29 +134,34 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 7. Create Owner User
-      const newUser = await tx.user.upsert({
-        where: { email },
-        update: {
-          id: userId,
-          authUserId: userId,
-          tenantId: tenant.id,
-          roleType: 'OWNER',
-          roleId: ownerRole.id,
-        },
-        create: {
-          id: userId,
-          authUserId: userId,
-          tenantId: tenant.id,
-          email,
-          fullName: cleanName,
-          roleType: 'OWNER',
-          roleId: ownerRole.id,
-          isActive: true,
-        },
-      });
+      // 4. Create or link Owner User
+      let newUser = await tx.user.findFirst({ where: { email } });
+      if (newUser) {
+        newUser = await tx.user.update({
+          where: { id: newUser.id },
+          data: {
+            authUserId: userId,
+            tenantId: tenant.id,
+            roleType: 'OWNER',
+            roleId: ownerRole.id,
+            fullName: cleanName,
+          },
+        });
+      } else {
+        newUser = await tx.user.create({
+          data: {
+            authUserId: userId,
+            tenantId: tenant.id,
+            email,
+            fullName: cleanName,
+            roleType: 'OWNER',
+            roleId: ownerRole.id,
+            isActive: true,
+          },
+        });
+      }
 
-      // 8. Create Linked Floor Waiter User for this Restaurant
+      // 5. Create Linked Floor Waiter User for this Restaurant
       await tx.user.upsert({
         where: { email: `waiter@${slug}.pos` },
         update: { tenantId: tenant.id, roleId: waiterRole.id },
@@ -193,7 +175,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 9. Create Linked Kitchen Chef User for this Restaurant
+      // 6. Create Linked Kitchen Chef User for this Restaurant
       await tx.user.upsert({
         where: { email: `kitchen@${slug}.pos` },
         update: { tenantId: tenant.id, roleId: kitchenRole.id },
@@ -207,25 +189,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Create RestaurantMember relationship
-      await tx.restaurantMember.upsert({
-        where: {
-          tenantId_userId: {
-            tenantId: tenant.id,
-            userId,
-          },
-        },
-        update: { role: 'OWNER' },
-        create: {
-          tenantId: tenant.id,
-          userId,
-          role: 'OWNER',
-          roleId: ownerRole.id,
-          isActive: true,
-        },
-      });
-
-      // Enable default platform modules for clean restaurant workspace
+      // 7. Enable default platform modules for clean restaurant workspace
       const defaultModules = [
         'pos.dine_in', 'pos.quick_counter', 'operations.tables', 'operations.kitchen_kds',
         'catalog.modifiers_variants', 'billing.thermal_receipts', 'payments.upi_qr',
@@ -239,7 +203,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // Create RegistrationRequest (approved)
+      // 8. Create RegistrationRequest (approved)
       await tx.registrationRequest.create({
         data: {
           tenantId: tenant.id,
@@ -252,8 +216,62 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return { tenant, profile, user: newUser };
+      return { tenant, profile, user: newUser, ownerRole };
     });
+
+    // 9. Outside transaction: Non-blocking Supabase auth schema links
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO public.profiles (id, full_name, phone, created_at, updated_at)
+         VALUES ($1::uuid, $2, '', NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name`,
+        userId,
+        cleanName
+      );
+    } catch (e: any) {
+      console.warn('Profiles table sync skipped:', e.message);
+    }
+
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE public."Tenant" SET owner_user_id = $1::uuid WHERE id = $2`,
+        userId,
+        result.tenant.id
+      );
+    } catch (e: any) {
+      console.warn('Tenant owner_user_id update skipped:', e.message);
+    }
+
+    try {
+      await prisma.$executeRawUnsafe(
+        `UPDATE public."BusinessProfile" SET user_id = $1::uuid WHERE id = $2`,
+        userId,
+        result.profile.id
+      );
+    } catch (e: any) {
+      console.warn('BusinessProfile user_id update skipped:', e.message);
+    }
+
+    try {
+      await prisma.restaurantMember.upsert({
+        where: {
+          tenantId_userId: {
+            tenantId: result.tenant.id,
+            userId,
+          },
+        },
+        update: { role: 'OWNER' },
+        create: {
+          tenantId: result.tenant.id,
+          userId,
+          role: 'OWNER',
+          roleId: result.ownerRole.id,
+          isActive: true,
+        },
+      });
+    } catch (e: any) {
+      console.warn('RestaurantMember sync skipped:', e.message);
+    }
 
     return NextResponse.json({
       success: true,
