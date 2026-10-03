@@ -1415,12 +1415,17 @@ export default function SuperAdminPortalPage() {
               </div>
               <div className="flex items-center space-x-2">
                 <a
-                  href={`http://localhost:8000/${selectedTenant.slug}/dashboard`}
+                  href={`${
+                    process.env.NEXT_PUBLIC_APP_URL ||
+                    (typeof window !== 'undefined' && window.location.hostname.includes('localhost')
+                      ? 'http://localhost:8000'
+                      : 'https://www.zipbill.shop')
+                  }/${selectedTenant.slug}/dashboard`}
                   target="_blank"
                   rel="noreferrer"
                   className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition"
                 >
-                  <span>Open Client Outlet (Port 8000)</span>
+                  <span>Open Client Outlet</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
                 <button onClick={() => setSelectedTenant(null)} className="p-1.5 rounded text-placeholder hover:text-heading">

@@ -204,15 +204,20 @@ function PendingApprovalContent() {
                   <span>{checking ? 'Checking PostgreSQL Database...' : 'Check Approval Status Now'}</span>
                 </button>
 
-                {/* Direct Link to Admin Port 9000 for convenience */}
+                {/* Direct Link to Admin Panel */}
                 <div className="pt-2">
                   <a
-                    href="http://localhost:9000"
+                    href={
+                      process.env.NEXT_PUBLIC_ADMIN_URL ||
+                      (typeof window !== 'undefined' && window.location.hostname.includes('localhost')
+                        ? 'http://localhost:9000'
+                        : 'https://zipbill.vercel.app')
+                    }
                     target="_blank"
                     rel="noreferrer"
                     className="w-full py-2.5 px-4 rounded-xl bg-amber-50 hover:bg-amber-100 text-[#92400E] border border-amber-300/80 text-xs font-bold flex items-center justify-center space-x-2 transition"
                   >
-                    <span>Open Admin Panel to Approve (Port 9000)</span>
+                    <span>Open Admin Panel to Approve</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
