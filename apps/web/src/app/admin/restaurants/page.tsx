@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Store, Plus, Search, Loader2 } from 'lucide-react';
+import { Store, Plus, Search, Loader2, ArrowUpRight, CheckCircle2, XCircle } from 'lucide-react';
 
 interface TenantItem {
   id: string;
@@ -10,6 +10,7 @@ interface TenantItem {
   businessType: string;
   status: string;
   plan: string;
+  email?: string;
   createdAt: string;
 }
 
@@ -17,28 +18,52 @@ export default function AdminRestaurantsPage() {
   const [tenants, setTenants] = useState<TenantItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const loadTenants = async () => {
+    try {
+      const res = await fetch('/api/admin/tenants');
+      if (res.ok) {
+        const data = await res.json();
+        setTenants(data.tenants || []);
+      }
+    } catch (err) {
+      console.error('Failed to load tenants:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadTenants() {
-      try {
-        const res = await fetch('/api/admin/tenants');
-        if (res.ok) {
-          const data = await res.json();
-          setTenants(data.tenants || []);
-        }
-      } catch (err) {
-        console.error('Failed to load tenants:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadTenants();
   }, []);
+
+  const handleToggleStatus = async (tenantId: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'APPROVED' ? 'SUSPENDED' : 'APPROVED';
+    setUpdatingId(tenantId);
+    try {
+      const res = await fetch('/api/admin/tenants', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: tenantId, status: nextStatus }),
+      });
+      if (res.ok) {
+        setTenants((prev) =>
+          prev.map((t) => (t.id === tenantId ? { ...t, status: nextStatus } : t))
+        );
+      }
+    } catch (err) {
+      console.error('Failed to toggle tenant status:', err);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   const filtered = tenants.filter(
     (t) =>
       t.name.toLowerCase().includes(search.toLowerCase()) ||
-      t.slug.toLowerCase().includes(search.toLowerCase())
+      t.slug.toLowerCase().includes(search.toLowerCase()) ||
+      (t.email && t.email.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
@@ -47,13 +72,9 @@ export default function AdminRestaurantsPage() {
         <div>
           <h1 className="text-2xl font-bold text-heading tracking-tight">Restaurant Tenants</h1>
           <p className="text-sm text-secondary mt-1">
-            Global tenant provisioning, module toggles, and business workspace management
+            Global tenant provisioning, workspace management, and active status controls
           </p>
         </div>
-        <button className="btn-primary text-xs px-4 py-2.5 flex items-center space-x-2">
-          <Plus className="w-4 h-4" />
-          <span>Provision New Tenant</span>
-        </button>
       </div>
 
       <div className="card p-6 space-y-4">
@@ -63,7 +84,7 @@ export default function AdminRestaurantsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tenant by name, slug, or ID..."
+            placeholder="Search tenant by name, slug, or email..."
             className="bg-transparent text-xs text-heading placeholder-placeholder focus:outline-none w-full"
           />
         </div>
@@ -95,8 +116,13 @@ export default function AdminRestaurantsPage() {
               <tbody className="divide-y divide-border">
                 {filtered.map((tenant) => (
                   <tr key={tenant.id} className="hover:bg-surfaceMuted transition">
-                    <td className="py-3.5 px-4 font-bold text-heading">{tenant.name}</td>
-                    <td className="py-3.5 px-4 text-secondary font-mono">{tenant.slug}</td>
+                    <td className="py-3.5 px-4 font-bold text-heading">
+                      <div>{tenant.name}</div>
+                      {tenant.email && (
+                        <div className="text-[11px] font-normal text-secondary">{tenant.email}</div>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-secondary font-mono">/{tenant.slug}</td>
                     <td className="py-3.5 px-4">
                       <span className="px-2 py-0.5 rounded bg-primary-light text-primary font-semibold">
                         {tenant.businessType}
@@ -104,20 +130,31 @@ export default function AdminRestaurantsPage() {
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-heading">{tenant.plan}</td>
                     <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded font-semibold ${
+                      <button
+                        onClick={() => handleToggleStatus(tenant.id, tenant.status)}
+                        disabled={updatingId === tenant.id}
+                        title="Click to toggle status"
+                        className={`px-2.5 py-1 rounded font-semibold text-[11px] cursor-pointer transition hover:opacity-80 ${
                           tenant.status === 'APPROVED'
                             ? 'bg-emerald-100 text-emerald-800'
+                            : tenant.status === 'SUSPENDED'
+                            ? 'bg-red-100 text-red-800'
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {tenant.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button className="btn-secondary text-[11px] px-3 py-1 font-semibold">
-                        Manage Tenant
+                        {updatingId === tenant.id ? 'Updating...' : tenant.status}
                       </button>
+                    </td>
+                    <td className="py-3.5 px-4 text-right space-x-2">
+                      <a
+                        href={`/${tenant.slug}/dashboard`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-secondary text-[11px] px-3 py-1 font-semibold inline-flex items-center space-x-1"
+                      >
+                        <span>Open Portal</span>
+                        <ArrowUpRight className="w-3 h-3" />
+                      </a>
                     </td>
                   </tr>
                 ))}

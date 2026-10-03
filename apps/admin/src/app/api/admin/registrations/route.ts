@@ -20,13 +20,21 @@ export async function GET() {
         id: r.id,
         tenantId: r.tenantId,
         restaurantName: r.tenant?.name || r.tenant?.businessProfile?.businessName || 'Unknown Restaurant',
+        ownerName: r.applicantName || 'Applicant',
         applicantName: r.applicantName,
+        email: r.applicantEmail || '',
         applicantEmail: r.applicantEmail,
+        phone: r.applicantPhone || '',
         applicantPhone: r.applicantPhone,
-        businessType: r.businessType,
-        intendedModules: r.intendedModules,
-        status: r.status,
+        businessType: r.businessType || 'RESTAURANT',
+        intendedModules: r.intendedModules || null,
+        requestedModules: r.intendedModules || null,
+        status: r.status || 'PENDING',
         rejectionReason: r.rejectionReason,
+        requestedPlan: 'PRO',
+        tableCountEst: r.tableCountEst || null,
+        city: r.tenant?.businessProfile?.city || 'Bengaluru',
+        state: r.tenant?.businessProfile?.state || 'Karnataka',
         createdAt: r.createdAt.toISOString(),
       })),
     });
@@ -143,20 +151,27 @@ export async function POST(req: NextRequest) {
           data: { status: 'REJECTED' },
         });
 
-        await tx.auditLog.create({
-          data: {
-            tenantId: reg.tenantId,
-            userId: 'super-admin',
-            userName: 'Platform Super Admin',
-            action: 'REJECT_RESTAURANT',
-            entityType: 'TENANT',
-            entityId: reg.tenantId,
-            metadataJson: {
-              requestId,
-              reason: rejectionReason,
-            },
-          },
+        const adminUser = await prisma.user.findFirst({
+          where: { roleType: 'SUPER_ADMIN' },
         });
+        const validUserId = adminUser?.id || (await prisma.user.findFirst({ where: { tenantId: reg.tenantId } }))?.id;
+
+        if (validUserId) {
+          await tx.auditLog.create({
+            data: {
+              tenantId: reg.tenantId,
+              userId: validUserId,
+              userName: 'Platform Super Admin',
+              action: 'REJECT_RESTAURANT',
+              entityType: 'TENANT',
+              entityId: reg.tenantId,
+              metadataJson: {
+                requestId,
+                reason: rejectionReason,
+              },
+            },
+          });
+        }
       });
 
       return NextResponse.json({

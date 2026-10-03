@@ -173,10 +173,9 @@ export async function POST(req: NextRequest) {
       userPreferences,
       onboardingCompleted,
       enabledModules,
-      permissions,
-      redirect: user.tenant?.slug 
-        ? `/${user.tenant.slug}/dashboard` 
-        : (onboardingCompleted ? '/dashboard' : '/onboarding'),
+      redirect: !onboardingCompleted
+        ? `/onboarding?tenantId=${user.tenant?.id || ''}&email=${encodeURIComponent(user.email)}`
+        : '/dashboard',
     });
   } catch (error: any) {
     console.error('Login API error:', error);

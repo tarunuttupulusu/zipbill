@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@platform/database';
 import { supabaseAdmin } from '@/lib/supabase';
-import { seedTenantStarterData } from '@/lib/seed-starter';
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,13 +59,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Create Tenant, BusinessProfile, User record, and RegistrationRequest in PostgreSQL
     const result = await prisma.$transaction(async (tx) => {
-      // Create Tenant with APPROVED status for immediate onboarding
+      // Create Tenant with PENDING status awaiting Admin approval
       const tenant = await tx.tenant.create({
         data: {
           slug,
           name: restaurantName,
           businessType: businessType as any,
-          status: 'APPROVED',
+          status: 'PENDING',
         },
       });
 
@@ -223,21 +222,7 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Enable default platform modules for clean restaurant workspace
-      const defaultModules = [
-        'pos.dine_in', 'pos.quick_counter', 'operations.tables', 'operations.kitchen_kds',
-        'catalog.modifiers_variants', 'billing.thermal_receipts', 'payments.upi_qr',
-        'staff.shared_access', 'inventory.raw_materials', 'reports.sales_analytics'
-      ];
-      for (const token of defaultModules) {
-        await tx.tenantModule.upsert({
-          where: { tenantId_moduleToken: { tenantId: tenant.id, moduleToken: token } },
-          update: { isEnabled: true },
-          create: { tenantId: tenant.id, moduleToken: token, isEnabled: true },
-        });
-      }
-
-      // Create RegistrationRequest (auto-approved for instant start)
+      // Create RegistrationRequest with only the details filled by the applicant
       const registration = await tx.registrationRequest.create({
         data: {
           tenantId: tenant.id,
@@ -245,8 +230,8 @@ export async function POST(req: NextRequest) {
           applicantEmail: email,
           applicantPhone: phone || '',
           businessType: businessType as any,
-          status: 'APPROVED',
-          intendedModules: defaultModules,
+          status: 'PENDING',
+          intendedModules: body.intendedModules || null,
         },
       });
 
@@ -264,6 +249,7 @@ export async function POST(req: NextRequest) {
             businessType,
             email,
             authUserId,
+            status: 'PENDING',
           },
         },
       });
@@ -271,19 +257,17 @@ export async function POST(req: NextRequest) {
       return { tenant, profile, user, registration };
     });
 
-    // Auto-seed starter tables, categories, menu items and sample order
-    await seedTenantStarterData(result.tenant.id, result.tenant.businessType);
-
     return NextResponse.json({
       success: true,
-      message: 'Account created with clean, dedicated restaurant database.',
+      message: 'Registration submitted successfully. Waiting for Platform Admin approval.',
       userId: authUserId,
       tenantId: result.tenant.id,
       tenant: result.tenant,
       profile: result.profile,
       user: result.user,
       registrationId: result.registration.id,
-      status: 'APPROVED',
+      status: 'PENDING',
+      redirect: '/pending-approval',
     });
   } catch (error: any) {
     console.error('Registration API error:', error);

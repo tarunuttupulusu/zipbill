@@ -6,22 +6,42 @@ import { useApp } from '@/lib/state';
 
 export default function RootPage() {
   const router = useRouter();
-  const { session } = useApp();
+  const { session, profile } = useApp();
 
   useEffect(() => {
-    if (
+    let savedProfile: any = null;
+    let savedSession: any = null;
+    if (typeof window !== 'undefined') {
+      try {
+        const rawP = localStorage.getItem('saas_active_profile');
+        if (rawP) savedProfile = JSON.parse(rawP);
+        const rawS = localStorage.getItem('saas_active_session');
+        if (rawS) savedSession = JSON.parse(rawS);
+      } catch {}
+    }
+
+    const currentEmail = session?.email || savedSession?.email;
+    const isOwner =
       session &&
       session.userId &&
       session.userId !== 'usr-owner-01' &&
       session.email !== 'owner@restaurant.pos' &&
       !session.email?.startsWith('test-') &&
-      !session.email?.includes('example.com')
-    ) {
-      router.replace('/dashboard');
+      !session.email?.includes('example.com');
+
+    if (currentEmail && (isOwner || savedSession)) {
+      const isCompleted = profile?.onboardingCompleted ?? savedProfile?.onboardingCompleted ?? false;
+      const targetTenantId = profile?.tenantId || savedProfile?.tenantId || session?.tenantId || savedSession?.tenantId || '';
+      
+      if (!isCompleted) {
+        router.replace(`/onboarding?tenantId=${targetTenantId}&email=${encodeURIComponent(currentEmail)}`);
+      } else {
+        router.replace('/dashboard');
+      }
     } else {
-      router.replace('/register');
+      router.replace('/login');
     }
-  }, [session, router]);
+  }, [session, profile, router]);
 
   return (
     <div className="min-h-screen bg-[#FDFCFB] flex items-center justify-center font-sans">

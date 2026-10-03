@@ -32,7 +32,7 @@ const INITIAL_PROFILE: BusinessProfile = {
   currencyCode: 'INR',
   currencySymbol: '₹',
   timezone: 'Asia/Kolkata',
-  onboardingCompleted: true,
+  onboardingCompleted: false,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
@@ -54,6 +54,7 @@ interface AppContextType {
   businessType: BusinessType;
   setBusinessType: (b: BusinessType) => void;
   enabledModules: ModuleToken[];
+  setEnabledModules: (mods: ModuleToken[]) => void;
   toggleModule: (token: ModuleToken) => void;
   session: UserSession;
   setSession: (s: UserSession) => void;
@@ -109,7 +110,7 @@ const AppContext = createContext<AppContextType | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [profile, setProfileState] = useState<BusinessProfile>(INITIAL_PROFILE);
   const [businessType, setBusinessTypeState] = useState<BusinessType>('RESTAURANT');
-  const [enabledModules, setEnabledModules] = useState<ModuleToken[]>(
+  const [enabledModules, setEnabledModulesState] = useState<ModuleToken[]>(
     getDefaultModulesForBusinessType('RESTAURANT')
   );
   const [session, setSessionState] = useState<UserSession>(INITIAL_SESSION);
@@ -155,13 +156,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setEnabledModules = (mods: ModuleToken[]) => {
+    setEnabledModulesState(mods);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('saas_active_modules', JSON.stringify(mods));
+    }
+  };
+
   const setBusinessType = (newType: BusinessType) => {
     setBusinessTypeState(newType);
-    const defaults = getDefaultModulesForBusinessType(newType);
-    setEnabledModules(defaults);
     if (typeof window !== 'undefined') {
       localStorage.setItem('saas_active_business_type', newType);
-      localStorage.setItem('saas_active_modules', JSON.stringify(defaults));
     }
   };
 
@@ -224,8 +229,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setProfileState(data.profile);
         }
         if (data.modules && Array.isArray(data.modules) && data.modules.length > 0) {
-          if (typeof window !== 'undefined' && !localStorage.getItem('saas_active_modules')) {
-            setEnabledModules(data.modules);
+          setEnabledModulesState(data.modules);
+          if (typeof window !== 'undefined') {
             localStorage.setItem('saas_active_modules', JSON.stringify(data.modules));
           }
         }
@@ -337,9 +342,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleModule = (token: ModuleToken) => {
-    setEnabledModules((prev) => {
-      const isCurrentlyEnabled = prev.includes(token);
-      const next = isCurrentlyEnabled ? prev.filter((t) => t !== token) : [...prev, token];
+    setEnabledModulesState((prev: ModuleToken[]) => {
+      const isCurrentlyEnabled = (prev || []).includes(token);
+      const next = isCurrentlyEnabled ? prev.filter((t: ModuleToken) => t !== token) : [...(prev || []), token];
       if (typeof window !== 'undefined') {
         localStorage.setItem('saas_active_modules', JSON.stringify(next));
       }
@@ -519,6 +524,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         businessType,
         setBusinessType,
         enabledModules,
+        setEnabledModules,
         toggleModule,
         session,
         setSession,

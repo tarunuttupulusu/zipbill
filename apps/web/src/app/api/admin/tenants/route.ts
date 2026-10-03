@@ -25,8 +25,42 @@ export async function GET(_req: NextRequest) {
         businessType: t.businessType,
         status: t.status,
         plan: t.subscriptions[0]?.planId || 'Free Tier',
+        phone: t.businessProfile?.phone || '',
+        email: t.businessProfile?.email || '',
+        city: t.businessProfile?.city || '',
+        state: t.businessProfile?.state || '',
         createdAt: t.createdAt,
       })),
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, status, name, businessType } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Tenant ID is required.' }, { status: 400 });
+    }
+
+    const updated = await prisma.tenant.update({
+      where: { id },
+      data: {
+        ...(status ? { status } : {}),
+        ...(name ? { name } : {}),
+        ...(businessType ? { businessType } : {}),
+      },
+      include: {
+        businessProfile: true,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      tenant: updated,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

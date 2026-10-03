@@ -107,44 +107,59 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     pathname === '/register' ||
     pathname === '/pending-approval' ||
     pathname === '/verify-email' ||
+    pathname === '/onboarding' ||
     pathname?.startsWith('/admin') ||
     pathname?.startsWith('/tarun/admin');
 
-  // URL-based multi-tenancy & section resolution
-  const pathParts = pathname ? pathname.split('/').filter(Boolean) : [];
-  const KNOWN_SECTIONS_SET = new Set([
-    'dashboard', 'pos', 'tables', 'orders', 'kitchen', 'menu', 'customers',
-    'billing', 'payments', 'expenses', 'inventory', 'reports', 'staff', 'qr',
-    'screens', 'printers', 'sync', 'settings', 'subscription', 'leads', 'offline', 'onboarding', 'insights'
-  ]);
-
-  const currentSlugFromUrl = pathParts.length > 0 && !KNOWN_SECTIONS_SET.has(pathParts[0]) ? pathParts[0] : null;
-  const currentSection = currentSlugFromUrl
-    ? `/${pathParts.slice(1).join('/') || 'dashboard'}`
-    : pathname || '/dashboard';
-
-  const activeRestaurantSlug = currentTenant?.slug || currentSlugFromUrl || (profile.tenantId ? profile.tenantId.slice(0, 8) : '');
+  // Direct clean route resolution (Next.js routes are top-level /dashboard, /pos, /tables, etc.)
+  const currentSection = pathname || '/dashboard';
 
   const getSectionHref = (baseHref: string) => {
-    if (!activeRestaurantSlug) return baseHref;
-    const cleanBase = baseHref === '/' ? '/dashboard' : baseHref;
-    return `/${activeRestaurantSlug}${cleanBase}`;
+    return baseHref === '/' ? '/dashboard' : baseHref;
   };
 
-  // Keep URL strictly synchronized to the restaurant's slug path
+  // If user has not completed onboarding, Setup Wizard MUST come first in front of the page!
   React.useEffect(() => {
-    if (!isPublicPage && activeRestaurantSlug && !currentSlugFromUrl && pathname && pathname !== '/') {
-      router.replace(`/${activeRestaurantSlug}${pathname}`);
-    }
-  }, [isPublicPage, activeRestaurantSlug, currentSlugFromUrl, pathname, router]);
+    if (!isPublicPage) {
+      let isDone = profile?.onboardingCompleted;
+      let targetTenantId = profile?.tenantId || session?.tenantId || currentTenant?.id || '';
+      let targetEmail = session?.email || profile?.email || '';
 
-  // Security Check: Cross-Tenant Isolation Guard
-  const isUnauthorizedTenant = Boolean(
-    currentSlugFromUrl &&
-    currentTenant?.slug &&
-    currentSlugFromUrl !== currentTenant.slug &&
-    !availableTenants.some((t) => t.slug === currentSlugFromUrl)
-  );
+      if (typeof window !== 'undefined') {
+        try {
+          const rawProf = localStorage.getItem('saas_active_profile');
+          if (rawProf) {
+            const p = JSON.parse(rawProf);
+            if (typeof p.onboardingCompleted === 'boolean') isDone = p.onboardingCompleted;
+            if (p.tenantId) targetTenantId = p.tenantId;
+            if (p.email) targetEmail = p.email;
+          }
+        } catch {}
+
+        try {
+          const rawSess = localStorage.getItem('saas_active_session');
+          if (rawSess) {
+            const s = JSON.parse(rawSess);
+            if (s.email && !targetEmail) targetEmail = s.email;
+            if (s.tenantId && !targetTenantId) targetTenantId = s.tenantId;
+          }
+        } catch {}
+      }
+
+      if (isDone === false) {
+        router.replace(`/onboarding?tenantId=${targetTenantId}&email=${encodeURIComponent(targetEmail)}`);
+      }
+    }
+  }, [isPublicPage, profile?.onboardingCompleted, profile?.tenantId, session?.tenantId, session?.email, currentTenant?.id, router]);
+
+  // Load effective modules from context or localStorage
+  let effectiveModules = (enabledModules as string[]) || [];
+  if (effectiveModules.length === 0 && typeof window !== 'undefined') {
+    try {
+      const savedMods = localStorage.getItem('saas_active_modules');
+      if (savedMods) effectiveModules = JSON.parse(savedMods);
+    } catch {}
+  }
 
   // STEP 4 & 5: Load User Role & Permissions from authenticated backend session
   const effectivePermissions =
@@ -157,7 +172,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
   const visibleSections: ArchitectureSection[] = generateDynamicNavigation({
     tenantId: profile.tenantId || session.tenantId || '',
     businessType,
-    enabledModules: (enabledModules as string[]) || [],
+    enabledModules: effectiveModules,
     userRole: session.roleName,
     userPermissions: effectivePermissions,
   });
@@ -180,7 +195,7 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
     requiredSectionModules &&
     requiredSectionModules.length > 0 &&
     !requiredSectionModules.some((token) =>
-      enabledModules.some((m) => String(m).toLowerCase() === token.toLowerCase())
+      effectiveModules.some((m) => String(m).toLowerCase() === token.toLowerCase())
     )
   );
 
@@ -580,44 +595,9 @@ export function DynamicNavigation({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* PAGE CONTENT OR 403 FORBIDDEN / CROSS-TENANT ACCESS GUARD */}
+        {/* PAGE CONTENT OR 403 FORBIDDEN / ACCESS GUARD */}
         <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
-          {isUnauthorizedTenant ? (
-            <div className="min-h-[80vh] flex items-center justify-center p-6 font-sans">
-              <div className="card max-w-lg w-full p-8 text-center space-y-5 border-danger/40 shadow-card">
-                <div className="w-14 h-14 mx-auto rounded-2xl bg-danger-bg text-danger flex items-center justify-center">
-                  <ShieldAlert className="w-7 h-7 stroke-[2]" />
-                </div>
-                <div className="space-y-2">
-                  <span className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-danger-bg text-danger">
-                    Security Guard - Tenant Isolation
-                  </span>
-                  <h2 className="text-2xl font-bold text-heading">
-                    Cross-Tenant Access Restricted
-                  </h2>
-                  <p className="text-secondary text-sm leading-relaxed">
-                    You attempted to access workspace <code className="text-xs bg-surfaceMuted px-1.5 py-0.5 rounded font-mono text-danger">/{currentSlugFromUrl}</code>, but your session is authenticated for <strong className="text-heading">{currentTenant?.name || profile.businessName}</strong> (<code className="text-xs bg-surfaceMuted px-1.5 py-0.5 rounded font-mono">{currentTenant?.slug}</code>).
-                  </p>
-                </div>
-
-                <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
-                  <Link
-                    href={getSectionHref('/dashboard')}
-                    className="btn-primary w-full sm:w-auto text-xs py-2.5 px-6"
-                  >
-                    Go to My Workspace ({currentTenant?.name || 'Home'})
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="w-full sm:w-auto text-xs py-2.5 px-4 text-muted hover:text-danger"
-                  >
-                    Sign Out / Switch Account
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : isModuleDisabledForCurrentRoute ? (
+          {isModuleDisabledForCurrentRoute ? (
             <div className="min-h-[80vh] flex items-center justify-center p-6 font-sans">
               <div className="card max-w-lg w-full p-8 text-center space-y-5 border-warning/40 shadow-card">
                 <div className="w-14 h-14 mx-auto rounded-2xl bg-warning-bg text-warning flex items-center justify-center">

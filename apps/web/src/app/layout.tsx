@@ -6,7 +6,13 @@ export const metadata = {
   title: 'ZipBill - Restaurant, Cafe & Hotel Billing & POS Platform',
   description: 'ZipBill is the high-performance multi-tenant billing, POS, KOT, and table management platform for restaurants, cafes, and hotels.',
   icons: {
-    icon: '/brand/zipbill-receipt.jpg',
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon.png', type: 'image/png', sizes: '64x64' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: '/icon.png',
   },
 };
 

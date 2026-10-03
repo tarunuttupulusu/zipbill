@@ -109,8 +109,24 @@ function DashboardContent() {
     updateTableStatus,
   } = useApp();
 
-  const isModuleActive = (token: string) =>
-    enabledModules.some((m) => String(m).toLowerCase() === token.toLowerCase());
+  const isModuleActive = (token: string) => {
+    const t = token.toLowerCase();
+    const parts = t.split('.');
+    const shortToken = parts[parts.length - 1];
+    const catToken = parts[0];
+    return enabledModules.some((m) => {
+      const em = String(m).toLowerCase();
+      return (
+        em === t ||
+        em === shortToken ||
+        em === catToken ||
+        t.startsWith(`${em}.`) ||
+        em.startsWith(`${catToken}.`) ||
+        t.includes(em) ||
+        em.includes(shortToken)
+      );
+    });
+  };
 
   // Business Model details
   const bModel = BUSINESS_MODEL_INFO[businessType] || BUSINESS_MODEL_INFO.RESTAURANT;
@@ -145,26 +161,26 @@ function DashboardContent() {
     }
   }, [availableTabs, activeTab]);
 
-  const occupiedTables = tables.filter((t) => t.status === 'OCCUPIED' || t.status === 'BILLING');
-  const availableTables = tables.filter((t) => t.status === 'AVAILABLE');
-  const completedOrders = activeOrders.filter((o) => o.status === 'COMPLETED' || o.status === 'BILLED');
-  const preparingOrders = activeOrders.filter((o) => (o.status as any) === 'PREPARING' || o.status === 'CONFIRMED' || o.status === 'PLACED');
-  const deliveryOrders = activeOrders.filter((o) => o.orderType === 'DELIVERY' || !o.tableName);
+  const occupiedTables = (tables || []).filter((t) => t?.status === 'OCCUPIED' || t?.status === 'BILLING');
+  const availableTables = (tables || []).filter((t) => t?.status === 'AVAILABLE');
+  const completedOrders = (activeOrders || []).filter((o) => o?.status === 'COMPLETED' || o?.status === 'BILLED');
+  const preparingOrders = (activeOrders || []).filter((o) => (o?.status as any) === 'PREPARING' || o?.status === 'CONFIRMED' || o?.status === 'PLACED');
+  const deliveryOrders = (activeOrders || []).filter((o) => o?.orderType === 'DELIVERY' || !o?.tableName);
 
-  const currencySymbol = profile.currencySymbol || '₹';
+  const currencySymbol = profile?.currencySymbol || '₹';
   const totalRevenue =
-    stats?.totalRevenue ||
-    completedOrders.reduce((acc, o) => acc + (o.grandTotal || 0), 0) / 100;
+    stats?.totalRevenue ??
+    completedOrders.reduce((acc, o) => acc + (o?.grandTotal || 0), 0) / 100;
 
-  const lowStockItems = inventory.filter((item: any) => (item.currentStock || 0) <= (item.minStockAlert || 5));
+  const lowStockItems = (inventory || []).filter((item: any) => (item?.currentStock || 0) <= (item?.minStockAlert || 5));
 
-  const filteredOrders = activeOrders.filter((o) => {
+  const filteredOrders = (activeOrders || []).filter((o) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
-      o.orderNumber?.toLowerCase().includes(q) ||
-      o.tableName?.toLowerCase().includes(q) ||
-      o.createdByWorkerName?.toLowerCase().includes(q)
+      o?.orderNumber?.toLowerCase().includes(q) ||
+      o?.tableName?.toLowerCase().includes(q) ||
+      o?.createdByWorkerName?.toLowerCase().includes(q)
     );
   });
 
@@ -386,7 +402,7 @@ function DashboardContent() {
                       </div>
                       <div className="text-muted">
                         {ord.items && ord.items.length > 0
-                          ? ord.items.map((i: any) => `${i.quantity}x ${i.name}`).join(', ')
+                          ? ord.items.map((i: any) => `${i.quantity}x ${i.itemName || i.name || 'Item'}`).join(', ')
                           : 'Order items being punched'} • {ord.createdByWorkerName || 'Staff'}
                       </div>
                     </div>

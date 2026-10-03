@@ -38,10 +38,32 @@ export async function POST(req: NextRequest) {
     } = body;
 
     // Resolve tenant
-    if (!tenantId) {
-      return NextResponse.json({ error: 'tenantId is required to complete onboarding.' }, { status: 400 });
+    let targetTenantId = tenantId;
+    if (!targetTenantId && email) {
+      const reg = await prisma.registrationRequest.findFirst({
+        where: { applicantEmail: email },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (reg) targetTenantId = reg.tenantId;
+      else {
+        const u = await prisma.user.findFirst({
+          where: { email },
+        });
+        if (u?.tenantId) targetTenantId = u.tenantId;
+      }
     }
-    const targetTenantId = tenantId;
+
+    if (!targetTenantId) {
+      return NextResponse.json({ error: 'tenantId or valid registered email is required to complete onboarding.' }, { status: 400 });
+    }
+
+    const tenantRecord = await prisma.tenant.findUnique({
+      where: { id: targetTenantId },
+    });
+
+    if (!tenantRecord) {
+      return NextResponse.json({ error: 'Tenant record not found in database.' }, { status: 404 });
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       // 1. Update Tenant businessType
@@ -87,8 +109,19 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 3. Upsert Modules
-      if (Array.isArray(modules) && modules.length > 0) {
+      // 3. Sync Modules strictly according to wizard selection
+      if (Array.isArray(modules)) {
+        const selectedTokens = modules.map((m: any) => String(m).toLowerCase());
+        
+        // Disable modules that the user did not choose
+        await tx.tenantModule.updateMany({
+          where: {
+            tenantId: targetTenantId,
+          },
+          data: { isEnabled: false },
+        });
+
+        // Enable exactly the user's selected modules
         for (const mod of modules) {
           const tokenStr = String(mod).toLowerCase();
           await tx.tenantModule.upsert({
@@ -110,10 +143,18 @@ export async function POST(req: NextRequest) {
 
       // 4. Configure Tables if enabled
       if (hasTables && tableCount > 0) {
+        // Clean existing tables to avoid duplicate keys if re-onboarding
+        await tx.table.deleteMany({ where: { tenantId: targetTenantId } });
+        await tx.tableSection.deleteMany({ where: { tenantId: targetTenantId } });
+
+        const sectionsToUse = (Array.isArray(tableSections) && tableSections.length > 0)
+          ? tableSections
+          : ['Main Dining', 'AC Hall', 'Outdoor Terrace'];
+
         // Create table sections
         const createdSections: any[] = [];
-        for (let i = 0; i < tableSections.length; i++) {
-          const sName = tableSections[i];
+        for (let i = 0; i < sectionsToUse.length; i++) {
+          const sName = sectionsToUse[i];
           const section = await tx.tableSection.create({
             data: {
               tenantId: targetTenantId,
@@ -145,7 +186,54 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 5. Store Billing & Printer Settings
+      // 5. Store Staff Configuration & Create Employee Accounts
+      if (hasEmployees && Array.isArray(employees) && employees.length > 0) {
+        for (const emp of employees) {
+          if (!emp.name) continue;
+          const empRole = (emp.role === 'KITCHEN' ? 'KITCHEN' : emp.role === 'OWNER' ? 'OWNER' : 'WAITER') as any;
+          const slugName = emp.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const empEmail = emp.email || `${slugName || 'staff'}.${Math.floor(100 + Math.random() * 900)}@${tenantRecord.slug || 'zipbill'}.internal`;
+
+          const existing = await tx.user.findFirst({
+            where: {
+              OR: [
+                { email: empEmail },
+                { tenantId: targetTenantId, fullName: emp.name }
+              ]
+            }
+          });
+
+          if (!existing) {
+            await tx.user.create({
+              data: {
+                tenantId: targetTenantId,
+                email: empEmail,
+                fullName: emp.name,
+                phone: emp.phone || '+91 98000 00000',
+                roleType: empRole,
+                isActive: true,
+              },
+            });
+          }
+        }
+
+        await tx.restaurantSetting.upsert({
+          where: {
+            tenantId_key: {
+              tenantId: targetTenantId,
+              key: 'staff_config',
+            },
+          },
+          update: { valueJson: employees },
+          create: {
+            tenantId: targetTenantId,
+            key: 'staff_config',
+            valueJson: employees,
+          },
+        });
+      }
+
+      // 6. Store Billing & Printer Settings
       await tx.restaurantSetting.upsert({
         where: {
           tenantId_key: {
@@ -191,35 +279,51 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 6. Seed initial menu items if passed from AI import
+      // 7. Seed initial menu items if passed from AI import
       if (Array.isArray(initialMenu) && initialMenu.length > 0) {
         for (const catData of initialMenu) {
-          const category = await tx.category.create({
-            data: {
-              tenantId: targetTenantId,
-              name: catData.category || 'General',
-            },
+          const categoryName = catData.category || catData.name || 'General';
+          let category = await tx.category.findFirst({
+            where: { tenantId: targetTenantId, name: categoryName },
           });
+
+          if (!category) {
+            category = await tx.category.create({
+              data: {
+                tenantId: targetTenantId,
+                name: categoryName,
+              },
+            });
+          }
 
           if (Array.isArray(catData.items)) {
             for (const it of catData.items) {
-              await tx.menuItem.create({
-                data: {
-                  tenantId: targetTenantId,
-                  categoryId: category.id,
-                  name: it.name,
-                  description: it.description || '',
-                  basePrice: Math.round(Number(it.price || 100) * 100), // in cents / paise
-                  foodType: it.isVeg ? 'VEG' : 'NON_VEG',
-                  isAvailable: true,
-                },
+              const itemPrice = Math.round(Number(it.price || 100) * 100);
+              const foodType = it.foodType || (it.isVeg ? 'VEG' : 'NON_VEG');
+
+              const existingItem = await tx.menuItem.findFirst({
+                where: { tenantId: targetTenantId, categoryId: category.id, name: it.name },
               });
+
+              if (!existingItem) {
+                await tx.menuItem.create({
+                  data: {
+                    tenantId: targetTenantId,
+                    categoryId: category.id,
+                    name: it.name,
+                    description: it.description || '',
+                    basePrice: itemPrice,
+                    foodType: foodType as any,
+                    isAvailable: true,
+                  },
+                });
+              }
             }
           }
         }
       }
 
-      // 7. Audit Log
+      // 8. Audit Log
       const ownerUser = await tx.user.findFirst({
         where: { tenantId: targetTenantId },
       });
@@ -252,6 +356,8 @@ export async function POST(req: NextRequest) {
       message: 'Onboarding configuration successfully saved to PostgreSQL database.',
       profile: result.profile,
       tenantId: targetTenantId,
+      slug: tenantRecord.slug,
+      restaurantName: tenantRecord.name,
     });
   } catch (error: any) {
     console.error('Onboarding API error:', error);

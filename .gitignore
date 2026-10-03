@@ -44,3 +44,8 @@ Thumbs.db
 *.sqlite-journal
 *.db
 prisma/*.db
+
+# Scratch
+scratch/
+*/scratch/
+*/*/scratch/

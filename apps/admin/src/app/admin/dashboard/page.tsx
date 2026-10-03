@@ -65,8 +65,11 @@ export interface RegistrationReq {
   id: string;
   restaurantName: string;
   ownerName: string;
+  applicantName?: string;
   email: string;
+  applicantEmail?: string;
   phone: string;
+  applicantPhone?: string;
   businessType: string;
   city: string;
   state: string;
@@ -74,6 +77,7 @@ export interface RegistrationReq {
   status: 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'REQUIRES_INFO';
   requestedPlan: string;
   requestedModules: string[];
+  intendedModules?: string[];
   tableCountEst: number;
 }
 
@@ -363,6 +367,13 @@ export default function SuperAdminPortalPage() {
 
   // Load real data from PostgreSQL
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const sess = localStorage.getItem('saas_admin_session');
+      if (!sess) {
+        window.location.href = '/admin/login';
+        return;
+      }
+    }
     async function loadData() {
       try {
         const [regRes, tenRes, logRes] = await Promise.all([
@@ -372,7 +383,27 @@ export default function SuperAdminPortalPage() {
         ]);
 
         if (regRes?.requests?.length) {
-          setRegistrations(regRes.requests);
+          setRegistrations(
+            regRes.requests.map((r: any) => ({
+              id: r.id,
+              restaurantName: r.restaurantName || r.name || 'Unknown Restaurant',
+              ownerName: r.ownerName || r.applicantName || 'Applicant',
+              email: r.email || r.applicantEmail || '',
+              phone: r.phone || r.applicantPhone || '',
+              businessType: r.businessType || 'RESTAURANT',
+              city: r.city || 'Bengaluru',
+              state: r.state || 'Karnataka',
+              date: r.date || (r.createdAt ? new Date(r.createdAt).toLocaleDateString() : 'Recent'),
+              status: r.status || 'PENDING',
+              requestedPlan: r.requestedPlan || 'PRO',
+              requestedModules: Array.isArray(r.requestedModules)
+                ? r.requestedModules
+                : Array.isArray(r.intendedModules)
+                ? r.intendedModules
+                : ['pos.billing', 'pos.quick_counter'],
+              tableCountEst: r.tableCountEst ?? 10,
+            }))
+          );
         }
         if (tenRes?.tenants?.length) {
           setRestaurants(
@@ -569,13 +600,19 @@ export default function SuperAdminPortalPage() {
                 </div>
               </div>
 
-              <Link
-                href="/login"
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    localStorage.removeItem('saas_admin_session');
+                  }
+                  window.location.href = '/admin/login';
+                }}
                 className="p-1.5 rounded-lg text-placeholder hover:text-danger hover:bg-danger-bg transition"
                 title="Logout from Admin"
               >
                 <LogOut className="w-4 h-4 stroke-[1.8]" />
-              </Link>
+              </button>
             </div>
 
             {/* Admin Role Selector per Spec */}
@@ -812,19 +849,19 @@ export default function SuperAdminPortalPage() {
                     <tr key={reg.id} className="hover:bg-surfaceMuted/50 transition">
                       <td className="px-5 py-3.5">
                         <div className="font-semibold text-heading">{reg.restaurantName}</div>
-                        <div className="text-muted text-[11px]">{reg.ownerName} • {reg.email}</div>
+                        <div className="text-muted text-[11px]">{reg.ownerName || 'Applicant'} • {reg.email || ''}</div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="capitalize">{reg.businessType.toLowerCase()}</span>
-                        <div className="text-muted text-[11px]">{reg.city}, {reg.state}</div>
+                        <span className="capitalize">{(reg.businessType || 'RESTAURANT').toLowerCase()}</span>
+                        <div className="text-muted text-[11px]">{reg.city || 'Bengaluru'}{reg.state ? `, ${reg.state}` : ''}</div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="font-semibold text-heading">{reg.requestedPlan}</span>
-                        <div className="text-muted text-[11px]">~{reg.tableCountEst} Tables</div>
+                        <span className="font-semibold text-heading">{reg.requestedPlan || 'PRO'}</span>
+                        <div className="text-muted text-[11px]">~{reg.tableCountEst ?? 10} Tables</div>
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="px-2 py-0.5 rounded bg-surfaceMuted border border-border text-[10px] font-mono">
-                          {reg.requestedModules.length} Modules
+                          {(reg.requestedModules?.length ?? 0)} Modules
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
@@ -833,7 +870,7 @@ export default function SuperAdminPortalPage() {
                           reg.status === 'PENDING' ? 'bg-amber-100 text-amber-800' :
                           'bg-danger-bg text-danger'
                         }`}>
-                          {reg.status}
+                          {reg.status || 'PENDING'}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-right space-x-1.5">
@@ -924,7 +961,7 @@ export default function SuperAdminPortalPage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-muted">{t.enabledModules.length} Modules Active</span>
+                      <span className="text-[11px] text-muted">{(t.enabledModules?.length ?? 0)} Modules Active</span>
                       <div className="space-x-2">
                         <button
                           onClick={() => {
@@ -1295,22 +1332,29 @@ export default function SuperAdminPortalPage() {
 
                 <div className="space-y-1">
                   <span className="text-muted block font-semibold">Business Classification</span>
-                  <div className="text-heading font-medium">{selectedRegistration.businessType}</div>
-                  <div className="text-secondary">{selectedRegistration.city}, {selectedRegistration.state}</div>
-                  <div className="text-primary font-bold">Estimated {selectedRegistration.tableCountEst} Tables</div>
+                  <div className="text-heading font-medium">{selectedRegistration.businessType || 'RESTAURANT'}</div>
+                  {selectedRegistration.city && (
+                    <div className="text-secondary">{selectedRegistration.city}{selectedRegistration.state ? `, ${selectedRegistration.state}` : ''}</div>
+                  )}
+                  {selectedRegistration.tableCountEst != null && selectedRegistration.tableCountEst > 0 && (
+                    <div className="text-primary font-bold">Estimated {selectedRegistration.tableCountEst} Tables</div>
+                  )}
                 </div>
               </div>
 
-              <div className="p-4 bg-surfaceMuted rounded-xl border border-borderLight space-y-2">
-                <span className="text-muted font-semibold block">Requested Platform Modules</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedRegistration.requestedModules.map((m) => (
-                    <span key={m} className="px-2 py-0.5 rounded bg-surface border border-border font-mono text-[10px] text-heading">
-                      {m}
-                    </span>
-                  ))}
+              {((selectedRegistration.requestedModules && selectedRegistration.requestedModules.length > 0) ||
+                (selectedRegistration.intendedModules && selectedRegistration.intendedModules.length > 0)) && (
+                <div className="p-4 bg-surfaceMuted rounded-xl border border-borderLight space-y-2">
+                  <span className="text-muted font-semibold block">Requested Platform Modules</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(selectedRegistration.requestedModules || selectedRegistration.intendedModules || []).map((m: any) => (
+                      <span key={m} className="px-2 py-0.5 rounded bg-surface border border-border font-mono text-[10px] text-heading">
+                        {m}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="space-y-1">
                 <span className="text-muted font-semibold block">Application Status</span>
@@ -1369,9 +1413,20 @@ export default function SuperAdminPortalPage() {
                   <p className="text-xs text-muted">Tenant ID: {selectedTenant.id} • Slug: /{selectedTenant.slug}</p>
                 </div>
               </div>
-              <button onClick={() => setSelectedTenant(null)} className="p-1.5 rounded text-placeholder hover:text-heading">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={`http://localhost:8000/${selectedTenant.slug}/dashboard`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition"
+                >
+                  <span>Open Client Outlet (Port 8000)</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button onClick={() => setSelectedTenant(null)} className="p-1.5 rounded text-placeholder hover:text-heading">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Control Center Tabs per Spec */}
@@ -1422,7 +1477,7 @@ export default function SuperAdminPortalPage() {
                   <div className="p-4 bg-surfaceMuted rounded-xl border border-borderLight space-y-2">
                     <span className="font-semibold text-heading block">Active Platform Modules</span>
                     <div className="flex flex-wrap gap-1.5">
-                      {selectedTenant.enabledModules.map((m) => (
+                      {(selectedTenant.enabledModules || []).map((m) => (
                         <span key={m} className="px-2 py-0.5 rounded bg-surface border border-border text-[10px] font-mono text-heading">
                           {m}
                         </span>

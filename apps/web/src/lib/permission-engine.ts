@@ -387,16 +387,21 @@ export function checkModuleAccess(userPermissions: string[], moduleId: string): 
 // ============================================================
 
 export const SECTION_MODULE_REQUIREMENTS: Record<string, string[]> = {
-  pos: ['pos.dine_in', 'pos.quick_counter', 'pos.takeaway', 'pos.delivery'],
-  tables: ['operations.tables'],
-  kitchen: ['operations.kitchen_kds'],
-  inventory: ['inventory.raw_materials', 'inventory.recipes_bom'],
-  customers: ['crm.customers', 'crm.loyalty'],
-  expenses: ['finance.expenses'],
-  qr: ['qr.table_ordering', 'qr.digital_menu', 'qr.table_pay'],
-  printers: ['hardware.thermal_printers', 'operations.kot_printing'],
-  reports: ['reports.sales_analytics', 'reports.staff_activity'],
-  insights: ['reports.sales_analytics'],
+  pos: ['pos', 'pos.dine_in', 'pos.quick_counter', 'pos.takeaway', 'pos.delivery'],
+  tables: ['tables', 'operations.tables'],
+  orders: ['orders', 'pos.dine_in', 'pos.quick_counter'],
+  kitchen: ['kitchen', 'operations.kitchen_kds'],
+  menu: ['menu', 'catalog.modifiers_variants', 'ai_menu_import'],
+  billing: ['billing', 'billing.thermal_receipts'],
+  payments: ['payments', 'payments.upi_qr'],
+  inventory: ['inventory', 'inventory.raw_materials', 'inventory.recipes_bom'],
+  customers: ['customers', 'crm.customers', 'crm.loyalty'],
+  staff: ['staff', 'staff.shared_access'],
+  expenses: ['expenses', 'finance.expenses'],
+  qr: ['qr', 'qr.table_ordering', 'qr.digital_menu', 'qr.table_pay'],
+  printers: ['printers', 'hardware.thermal_printers', 'operations.kot_printing'],
+  reports: ['reports', 'reports.sales_analytics', 'reports.staff_activity'],
+  insights: ['insights', 'reports.sales_analytics'],
 };
 
 export const CHILD_MODULE_REQUIREMENTS: Record<string, string[]> = {
@@ -472,9 +477,14 @@ export function generateDynamicNavigation(params: NavigationGenerationParams): A
     enabledModules.map((m) => String(m).toLowerCase())
   );
 
-  const hasModule = (token: string) =>
-    normalizedEnabled.has(token.toLowerCase()) ||
-    normalizedEnabled.has(token.toUpperCase());
+  const hasModule = (token: string) => {
+    const t = token.toLowerCase();
+    if (normalizedEnabled.has(t) || normalizedEnabled.has(token.toUpperCase())) return true;
+    for (const em of normalizedEnabled) {
+      if (em === t || em.includes(t) || t.includes(em)) return true;
+    }
+    return false;
+  };
 
   const generatedSections: ArchitectureSection[] = [];
 
